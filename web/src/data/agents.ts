@@ -456,7 +456,7 @@ export const ROUTINES = [
   { id: "weekly-pay-run", bot: "pay" as AgentSlug, cadence: "weekly", title: "Weekly vendor payment draft" },
   { id: "daily-aging", bot: "collect" as AgentSlug, cadence: "daily", title: "Daily unpaid-invoice review" },
   { id: "month-end", bot: "close" as AgentSlug, cadence: "monthly", title: "Month-end completeness" },
-  { id: "period-story", bot: "story" as AgentSlug, cadence: "monthly", title: "Period narrative and forecast" },
+  { id: "period-story", bot: "story" as AgentSlug, cadence: "monthly", title: "Month-end story and cash forecast" },
   { id: "post-close-assurance", bot: "audit" as AgentSlug, cadence: "monthly", title: "After-the-fact audit sampling" },
 ];
 
@@ -465,5 +465,10 @@ export function agentName(slug: string): string {
 }
 
 export function skillLabel(slug: string): string {
-  return SKILL_COPY[slug] || slug.replace(/-/g, " ");
+  if (SKILL_COPY[slug]) return SKILL_COPY[slug];
+  return slug
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }

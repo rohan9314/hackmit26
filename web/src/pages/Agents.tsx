@@ -1,20 +1,26 @@
 import { useEffect, useState } from "react";
-import { get, statusTone } from "../api";
-import { PageHead, Pill } from "../layout/Shell";
+import { statusTone } from "../api";
+import { demoApi } from "../demoClient";
+import { PageHead, Pill, SourceBadge } from "../layout/Shell";
 import { AgentDirectory, AgentPanel } from "../components/AgentPanel";
 import { AGENTS, AGENTS_BY_SLUG } from "../data/agents";
 import { formatHandoff, formatStatus, formatSummary, formatWorkflow } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function Agents() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(() => savedGet("/api/agents"));
   const [open, setOpen] = useState<string>("ap");
 
   useEffect(() => {
-    get("/api/agents").then(setData);
+    demoApi.loadAgents().then(setData).catch(() => setData(savedGet("/api/agents")));
   }, []);
 
   const agent = AGENTS_BY_SLUG[open as keyof typeof AGENTS_BY_SLUG] || AGENTS[0];
   const live = (data?.bots || []).find((item: any) => item.slug === open);
+  const savedActivity = savedGet("/api/agents")?.activity || [];
+  const liveActivity = data?.activity || [];
+  const activity = liveActivity.length ? liveActivity : savedActivity;
+  const activitySource = liveActivity.length ? "live" : "saved";
 
   return (
     <div>
@@ -34,18 +40,19 @@ export default function Agents() {
           </div>
           <div className="card">
             <h2>What the agents just did</h2>
-            {(data?.activity || []).length === 0 ? (
-              <p className="muted">Run a simulation to append real agent activity. Events are not fabricated.</p>
+            {activitySource === "saved" ? <SourceBadge source="saved" /> : null}
+            {activity.length === 0 ? (
+              <p className="muted">No recent agent activity is available yet. Run a finance workflow to see who handed work to whom.</p>
             ) : (
-              (data.activity || []).map((row: any, idx: number) => (
-                <div key={idx} style={{ marginBottom: 12 }}>
-                  <div className="split">
-                    <strong>{formatWorkflow(row.workflow)}</strong>
-                    <Pill tone={statusTone(row.status)}>{formatStatus(row.status)}</Pill>
-                  </div>
-                  <p>{formatHandoff(row.bots, row.workflow)}</p>
-                  {row.summary ? <p className="muted">{formatSummary(row.summary)}</p> : null}
+              activity.map((row: any, idx: number) => (
+              <div key={idx} style={{ marginBottom: 12 }}>
+                <div className="split">
+                  <strong>{formatWorkflow(row.workflow)}</strong>
+                  <Pill tone={statusTone(row.status)}>{formatStatus(row.status)}</Pill>
                 </div>
+                <p>{formatHandoff(row.bots, row.workflow)}</p>
+                {row.summary ? <p className="muted">{formatSummary(row.summary)}</p> : null}
+              </div>
               ))
             )}
           </div>

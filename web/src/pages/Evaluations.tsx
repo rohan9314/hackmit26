@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { get, statusTone } from "../api";
+import { statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel } from "../components/Demo";
 import { DevDetails, LineageChain, ResultBlock, TraceIds, WhatsHappening } from "../components/Explain";
 import { formatCapability, formatEvalCase, formatFamily, formatPeriod, formatStatus, friendlyExpected } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 const FAMILY_ORDER = [
   "documents",
@@ -19,21 +21,21 @@ const FAMILY_ORDER = [
 ];
 
 export default function Evaluations() {
-  const [data, setData] = useState<any>(null);
-  const [gauntlet, setGauntlet] = useState<any>(null);
+  const [data, setData] = useState<any>(() => savedGet("/api/evaluations"));
+  const [gauntlet, setGauntlet] = useState<any>(() => savedGet("/api/gauntlet"));
   const [stories, setStories] = useState<any>({});
   const [lineage, setLineage] = useState<any>(null);
   const [open, setOpen] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/evaluations").then(setData).catch(() => setData(null));
-    get("/api/gauntlet").then(setGauntlet).catch(() => setGauntlet(null));
-    get("/api/stories/trap").then((row) => setStories((prev: any) => ({ ...prev, trap: row }))).catch(() => undefined);
-    get("/api/stories/harbor").then((row) => setStories((prev: any) => ({ ...prev, harbor: row }))).catch(() => undefined);
-    get("/api/stories/stripe").then((row) => setStories((prev: any) => ({ ...prev, stripe: row }))).catch(() => undefined);
-    get("/api/stories/correction").then((row) => setStories((prev: any) => ({ ...prev, correction: row }))).catch(() => undefined);
-    get("/api/lineage/INV-006")
+    demoApi.loadEvaluations().then(setData).catch(() => setData(savedGet("/api/evaluations")));
+    demoApi.loadGauntlet().then(setGauntlet).catch(() => setGauntlet(savedGet("/api/gauntlet")));
+    demoApi.loadStory("trap").then((row) => setStories((prev: any) => ({ ...prev, trap: row }))).catch(() => undefined);
+    demoApi.loadStory("harbor").then((row) => setStories((prev: any) => ({ ...prev, harbor: row }))).catch(() => undefined);
+    demoApi.loadStory("stripe").then((row) => setStories((prev: any) => ({ ...prev, stripe: row }))).catch(() => undefined);
+    demoApi.loadStory("correction").then((row) => setStories((prev: any) => ({ ...prev, correction: row }))).catch(() => undefined);
+    demoApi.loadLineage("INV-006")
       .then(setLineage)
       .catch(() => setLineage(null));
   }, [result]);
@@ -62,6 +64,7 @@ export default function Evaluations() {
       eyebrow="Evaluation Lab"
       title="Can these agents run connected finance work over time?"
       task="The Finance Gauntlet tests the same Maximor agents used in the live office against finance scenarios with known correct outcomes. Hidden expected outcomes stay off the agent path. A judge should be able to see what Maximor received, what it decided, why, what changed elsewhere, and whether that was correct."
+      source={source}
       happening={
         <WhatsHappening
           happening="Maximor is scored on messy documents, bank-to-ledger evidence, multi-step questions, month-after-month accruals, and whether every workflow agrees on the same bill."
@@ -74,13 +77,13 @@ export default function Evaluations() {
         <RunBar
             label="Run Finance Gauntlet"
             running={running}
-            onRun={() => run("/api/workflows/gauntlet")}
+            onRun={() => run(() => demoApi.runGauntlet())}
             extra={
               <>
-                <button className="btn" disabled={running} onClick={() => run("/api/workflows/evaluate")}>
+                <button className="btn" disabled={running} onClick={() => run(() => demoApi.runEvaluate())}>
                   Run the published finance cases
                 </button>
-                <button className="btn" disabled={running} onClick={() => run("/api/workflows/gauntlet", { modes: true })}>
+                <button className="btn" disabled={running} onClick={() => run(() => demoApi.runGauntlet({ modes: true }))}>
                   Compare memory on vs off
                 </button>
               </>

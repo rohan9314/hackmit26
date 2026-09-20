@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { Definition, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
 import { explainCashMatch, formatMatchType, formatStatus } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function Cash() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(() => savedGet("/api/cash"));
   const [focus, setFocus] = useState<string>("unexplained");
-  const { running, result, error, run } = useWorkflow();
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/cash").then(setData).catch(() => undefined);
+    demoApi.loadCash().then(setData).catch(() => setData(savedGet("/api/cash")));
   }, [result]);
 
   const report = result?.result?.report || data?.report;
@@ -27,6 +30,7 @@ export default function Cash() {
       eyebrow="Cash"
       title="Does the bank agree with the books?"
       task="Bank reconciliation checks whether the company's bank activity agrees with its accounting records. Every bank deposit or withdrawal should have a matching explanation in the ledger."
+      source={source}
       happening={
         <WhatsHappening
           happening="The bank shows that Northstar paid Maximor $12,412.40. The accounting ledger says Northstar owed and paid $12,400."
@@ -36,7 +40,7 @@ export default function Cash() {
       }
       runBar={
         <>
-          <RunBar label="Reconcile bank to ledger" running={running} onRun={() => run("/api/workflows/bank-reconciliation")} />
+          <RunBar label="Reconcile bank to ledger" running={running} onRun={() => run(() => demoApi.runCashReconciliation())} />
           <ErrorBox error={error} />
           <div className="btn-row" style={{ marginBottom: 14 }}>
             {[
@@ -71,20 +75,21 @@ export default function Cash() {
           </div>
           <div className="card">
             <h2>Accounting ledger rows</h2>
-            {(featured?.ledger || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} compact />
+            {(featured?.ledger || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} compact />
             ))}
-            {(featured?.fees || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} compact />
+            {(featured?.fees || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} compact />
             ))}
           </div>
         </div>
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.cash} />}
       output={
         <div className="card">
           <OutputHeadline label="Reconciliation result" value={story.title} tone={statusTone(featuredMatch?.status || report?.period_status)} />
           <Definition term="Reconciliation" />
+          {focus === "fee_netted" ? <Definition term="Bank fee" /> : null}
           {featuredMatch ? (
             <ResultBlock
               found={story.body}
@@ -115,7 +120,7 @@ export default function Cash() {
           <TraceIds ids={[...(featuredMatch?.bank_transaction_ids || []), ...(featuredMatch?.ledger_entry_ids || [])]} />
           <h2>All matches</h2>
           {matches.length === 0 ? (
-            <p className="muted">No persisted matches yet.</p>
+            <p className="muted">After you run reconciliation, every bank-to-ledger match appears here. Until then, the known story is the $12.40 Northstar difference above.</p>
           ) : (
             <div className="table-scroll">
               <table className="data">

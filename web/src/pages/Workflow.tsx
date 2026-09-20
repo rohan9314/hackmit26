@@ -29,7 +29,7 @@ export default function Workflow() {
           Run a live invoice simulation
         </Link>
         <Link className="btn" to="/architecture">
-          See the full agent graph
+          See how the agents work together
         </Link>
       </div>
     </div>

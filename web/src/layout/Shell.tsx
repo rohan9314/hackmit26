@@ -1,44 +1,47 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { ReactNode, useEffect, useState } from "react";
-import { get, post, statusTone } from "../api";
-import { formatAgent, formatExecution, formatPeriod, formatStatus, formatSummary } from "../copy";
+import { Fragment, ReactNode, useEffect, useState } from "react";
+import { statusTone } from "../api";
+import { demoApi } from "../demoClient";
+import { useHealth } from "../hooks";
+import { formatAgent, formatExecution, formatFieldKey, formatPeriod, formatStatus, formatSummary } from "../copy";
 
 const PRIMARY = [
   ["/", "Home"],
-  ["/architecture", "Architecture"],
+  ["/architecture", "How they work"],
   ["/workflow", "One invoice"],
-  ["/memory", "Memory"],
+  ["/memory", "Saved decisions"],
   ["/simulations", "Simulations"],
   ["/videos", "Videos"],
-  ["/coverage", "Coverage"],
-  ["/evaluations", "Evidence"],
+  ["/coverage", "What it covers"],
+  ["/evaluations", "Evaluation"],
 ];
 
 const SECONDARY = [
   ["/inbox", "Inbox"],
-  ["/ap", "Payables"],
-  ["/ar", "Receivables"],
-  ["/cash", "Cash"],
+  ["/ap", "Bills to pay"],
+  ["/ar", "Customer invoices"],
+  ["/cash", "Bank vs books"],
   ["/stripe", "Stripe"],
-  ["/close", "Close"],
-  ["/forecast", "Forecast"],
-  ["/audit", "Audit"],
+  ["/close", "Finish the month"],
+  ["/forecast", "Cash outlook"],
+  ["/audit", "Control tests"],
   ["/agents", "Team activity"],
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<any>(null);
   const [resetting, setResetting] = useState(false);
+  const live = useHealth();
   const location = useLocation();
 
   useEffect(() => {
-    get("/api/demo/status").then(setStatus).catch(() => setStatus(null));
+    demoApi.loadStatus().then(setStatus).catch(() => setStatus(null));
   }, [location.pathname]);
 
   async function resetBooks() {
     setResetting(true);
     try {
-      await post("/api/demo/reset");
+      await demoApi.resetBooks();
       window.location.reload();
     } finally {
       setResetting(false);
@@ -59,7 +62,7 @@ export function Shell({ children }: { children: ReactNode }) {
             Company <strong>{typeof status?.company === "string" ? status.company : status?.company?.legal_name || status?.company?.company?.legal_name || "Maximor Demo Corp"}</strong>
           </span>
           <span>
-            Period <strong>{formatPeriod(status?.period || "2026-09")}</strong>
+            Accounting month <strong>{formatPeriod(status?.period || "2026-09")}</strong>
           </span>
           <span className={`pill ${statusTone(status?.system_status)}`}>{formatStatus(status?.system_status || "operational")}</span>
           <span className={`pill ${status?.autonomy?.live_llm ? "warn" : "ok"}`}>
@@ -68,6 +71,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <span className={`pill ${status?.stripe?.mode === "live" ? "warn" : "info"}`}>
             Stripe {formatStatus(status?.stripe?.mode || "simulated")}
           </span>
+          <span className={`pill ${live ? "ok" : "warn"}`}>{live ? "Live office" : "Saved demo"}</span>
         </div>
       </header>
       <aside className="sidebar">
@@ -155,20 +159,42 @@ export function Stages({ stages }: { stages?: any[] }) {
 
 export function ErrorBox({ error }: { error: string | null }) {
   if (!error) return null;
-  const text =
-    error === "Not Found" || /^not found$/i.test(error)
-      ? "That request did not match a route on the running demo API. Restart the Maximor API and try again."
-      : error === "Internal Server Error" || error === "Failed to fetch" || /failed to fetch/i.test(error)
-        ? "The demo API did not respond. If it was restarting, run this again."
-        : error;
-  return <div className="error error-top">{text}</div>;
+  const unavailable =
+    /not found/i.test(error) ||
+    /unknown api route/i.test(error) ||
+    /did not match a route/i.test(error) ||
+    /method not allowed/i.test(error) ||
+    /failed to fetch/i.test(error) ||
+    /demo api unavailable/i.test(error) ||
+    /internal server error/i.test(error) ||
+    /timed out/i.test(error) ||
+    /timeout/i.test(error) ||
+    /aborted/i.test(error);
+  return (
+    <div className="notice notice-top">
+      {unavailable ? "Live agent run unavailable. Showing the saved demonstration result if one is available." : error}
+    </div>
+  );
+}
+
+export function SourceBadge({ source }: { source?: "live" | "saved" | null }) {
+  if (!source) return null;
+  return <span className={`source-badge ${source}`}>{source === "live" ? "Live run" : "Saved demo result"}</span>;
 }
 
 export function JsonBlock({ value }: { value: unknown }) {
   if (value === null || value === undefined) return <div className="muted">None</div>;
+  if (typeof value !== "object") return <div>{String(value)}</div>;
+  const entries = Object.entries(value as Record<string, unknown>).slice(0, 12);
+  if (!entries.length) return <div className="muted">None</div>;
   return (
-    <pre className="mono" style={{ whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: 12 }}>
-      {JSON.stringify(value, null, 2)}
-    </pre>
+    <dl className="kv">
+      {entries.map(([key, item]) => (
+        <Fragment key={key}>
+          <dt>{formatFieldKey(key)}</dt>
+          <dd>{typeof item === "object" ? "See explanation above" : formatStatus(item)}</dd>
+        </Fragment>
+      ))}
+    </dl>
   );
 }

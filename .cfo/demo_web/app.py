@@ -22,13 +22,18 @@ def create_app(canonical: Path | None = None, runtime: Path | None = None) -> Fa
     app = FastAPI(title="Maximor Office of the CFO", docs_url="/api/docs", redoc_url=None)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_origins=[
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:4173",
+            "http://localhost:4173",
+        ],
+        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    @app.get("/api/health")
-    def health() -> dict:
+    def health_payload() -> dict:
         return {
             "ok": True,
             "product": "Autonomous Office of the CFO",
@@ -37,6 +42,14 @@ def create_app(canonical: Path | None = None, runtime: Path | None = None) -> Fa
             "stripe": stripe_status(),
             **status_payload(),
         }
+
+    @app.get("/health")
+    def health_root() -> dict:
+        return health_payload()
+
+    @app.get("/api/health")
+    def health() -> dict:
+        return health_payload()
 
     @app.get("/api/demo/company")
     def company() -> dict:
@@ -127,34 +140,34 @@ def create_app(canonical: Path | None = None, runtime: Path | None = None) -> Fa
         return views.evaluations_view()
 
     @app.get("/api/gauntlet")
-    def gauntlet() -> dict:
-        from demo_web.gauntlet import gauntlet_view
+    def get_gauntlet() -> dict:
+        from demo_web import gauntlet as gauntlet_views
 
-        return gauntlet_view()
+        return gauntlet_views.gauntlet_view()
 
     @app.get("/api/stories/trap")
-    def story_trap() -> dict:
-        from demo_web.gauntlet import trap_story
+    def get_trap_story() -> dict:
+        from demo_web import gauntlet as gauntlet_views
 
-        return trap_story()
+        return gauntlet_views.trap_story()
 
     @app.get("/api/stories/harbor")
-    def story_harbor() -> dict:
-        from demo_web.gauntlet import harbor_story
+    def get_harbor_story() -> dict:
+        from demo_web import gauntlet as gauntlet_views
 
-        return harbor_story()
+        return gauntlet_views.harbor_story()
 
     @app.get("/api/stories/stripe")
-    def story_stripe() -> dict:
-        from demo_web.gauntlet import stripe_story
+    def get_stripe_story() -> dict:
+        from demo_web import gauntlet as gauntlet_views
 
-        return stripe_story()
+        return gauntlet_views.stripe_story()
 
     @app.get("/api/stories/correction")
-    def story_correction() -> dict:
-        from demo_web.gauntlet import correction_story
+    def get_correction_story() -> dict:
+        from demo_web import gauntlet as gauntlet_views
 
-        return correction_story()
+        return gauntlet_views.correction_story()
 
     @app.get("/api/scenarios")
     def scenario_list() -> dict:
@@ -294,13 +307,17 @@ def create_app(canonical: Path | None = None, runtime: Path | None = None) -> Fa
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Unknown scenario {scenario_id}") from None
 
+    @app.api_route("/api/{full_path:path}", methods=["POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+    def unknown_api(full_path: str):
+        raise HTTPException(status_code=404, detail="Not Found")
+
     if WEB_DIST.is_dir():
         app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
 
         @app.get("/{full_path:path}")
         def spa(full_path: str):
-            if full_path.startswith("api/"):
-                return JSONResponse({"error": "not found"}, status_code=404)
+            if full_path == "health" or full_path.startswith("api/") or full_path == "api":
+                return JSONResponse({"detail": f"Unknown API route /{full_path}"}, status_code=404)
             index = WEB_DIST / "index.html"
             if index.is_file():
                 return FileResponse(index)

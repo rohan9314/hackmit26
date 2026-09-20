@@ -9,9 +9,10 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from demo_web.jsonutil import dump
-from demo_web.workspace import activity_path, live_llm_requested, results_dir, website_dir
+from demo_web.workspace import activity_path, canonical_root, live_llm_requested, results_dir, runtime_root, website_dir
 from demo_web.bots import display_name_to_bot
 from demo_web import artifacts
+from demo_web.inbox_examples import INBOX_EXAMPLES, curated_ids, example_by_id, group_for, group_label
 
 PERIOD = "2026-09"
 AS_OF = "2026-09-30"
@@ -141,11 +142,43 @@ def list_traces() -> list[dict]:
         return []
 
 
+def _load_emails() -> list[dict]:
+    from demo_web.jsonutil import read_json
+
+    return (
+        read_json(runtime_root() / "ingestion" / "emails.json")
+        or read_json(canonical_root() / "ingestion" / "emails.json")
+        or []
+    )
+
+
+def _identify_story(classification: str, booked: bool, reason: str) -> dict:
+    kind = classification.replace("_", " ")
+    article = "an" if kind[:1].lower() in "aeiou" else "a"
+    if booked:
+        changed = "Maximor classified this as a vendor invoice and added it to accounts payable for further matching."
+    elif classification == "invoice":
+        changed = "Maximor classified this as a vendor invoice. A matching bill is already on the payable ledger, so no second amount owed was created."
+    elif classification == "quote":
+        changed = "This was a quote, not an invoice. Maximor did not create a payable and did not change the ledger."
+    elif classification == "receipt":
+        changed = "This was a receipt for a purchase that was already paid. Maximor did not create a payable."
+    elif classification == "statement":
+        changed = "This was an account statement listing earlier invoices, not a new bill. Nothing was added to accounts payable."
+    elif classification == "purchase_order":
+        changed = "This was a purchase order — Maximor's own authorization to buy — not a vendor bill. Nothing was booked."
+    elif classification == "not_invoice":
+        changed = "Maximor could not treat this as a complete vendor invoice, so it did not change the payable ledger."
+    elif "duplicate" in reason.lower():
+        changed = "This looks like a second copy of a bill already on file. Maximor did not create another amount owed."
+    else:
+        changed = f"Maximor identified this as {article} {kind} and did not create a vendor bill."
+    return {"what_changed": changed, "decision": "booked" if booked else "not_booked"}
+
+
 def ingest_sample(sample_id: str | None = None, *, all_sources: bool = False) -> dict:
     from invoice_ingestion.interpret import interpret_email
     from invoice_ingestion.workflow import ingest_candidates, ingest_invoices
-    from demo_web.workspace import runtime_root
-    from demo_web.jsonutil import read_json
 
     if all_sources:
         report = ingest_invoices(PERIOD, use_llm=False, forward_to_ap=True, run_ap=False, reset_overlay=False)
@@ -157,37 +190,73 @@ def ingest_sample(sample_id: str | None = None, *, all_sources: bool = False) ->
             "handoffs": _handoff(["Email Invoice Agent", "AP Preparer"]),
         }
 
-    emails = read_json(runtime_root() / "ingestion" / "emails.json") or []
+    emails = _load_emails()
     email = next((item for item in emails if item.get("message_id") == sample_id), None)
     if email is None:
-        email = next((item for item in emails if item.get("message_id") == "MSG-E-MESSY"), emails[0] if emails else None)
+        email = next((item for item in emails if item.get("message_id") == "MSG-E-INV-001"), emails[0] if emails else None)
     if email is None:
         raise ValueError("No ingestion email samples in the Maximor pack")
     classification, reason, candidates = interpret_email(email)
     report = ingest_candidates(candidates, PERIOD, forward_to_ap=True, run_ap=False, reset_overlay=False)
     picked = dump(candidates[0]) if candidates else None
+    booked = bool(report.canonical_invoices)
+    story = _identify_story(classification, booked, reason)
+    meta = example_by_id(str(email.get("message_id") or "")) or {}
+    extracted = {
+        "vendor": (picked or {}).get("vendor") or "—",
+        "invoice_number": (picked or {}).get("vendor_invoice_number") or (picked or {}).get("invoice_number") or "—",
+        "amount": (picked or {}).get("amount"),
+        "po_number": (picked or {}).get("po_id") or (picked or {}).get("po_number") or "—",
+    }
+    kind = classification.replace("_", " ")
+    if classification == "not_invoice":
+        summary = "The document was identified as not a vendor invoice"
+    else:
+        summary = f"The document was identified as {'an' if classification[:1] in 'aeiou' else 'a'} {kind}"
     payload = {
-        "summary": f"The document was identified as a {classification.replace('_', ' ')}",
+        "summary": summary,
         "sample_id": email.get("message_id"),
         "classification": classification,
         "classification_reason": reason,
-        "extracted": picked,
+        "extracted": extracted,
         "candidates": dump(candidates),
         "report": dump(report),
+        "what_changed": story["what_changed"],
+        "title": meta.get("title") or email.get("subject"),
         "stages": [
-            {"id": "received", "label": "Document received", "status": "completed", "detail": email.get("subject")},
-            {"id": "classified", "label": "Identify what kind of document arrived", "status": "completed", "detail": classification},
-            {"id": "fields", "label": "Read vendor, amount, dates, and invoice number", "status": "completed", "detail": reason},
+            {
+                "id": "received",
+                "label": "Document Intake read the email and attachment.",
+                "status": "completed",
+                "bot": "email",
+                "detail": meta.get("title") or email.get("subject"),
+            },
+            {
+                "id": "classified",
+                "label": "Document Intake identified what kind of document arrived.",
+                "status": "completed",
+                "bot": "email",
+                "detail": reason,
+            },
+            {
+                "id": "fields",
+                "label": "Accounts Payable checked whether the document creates an amount the company owes.",
+                "status": "completed",
+                "bot": "ap",
+                "detail": "A vendor bill is created only when this is actually an invoice.",
+            },
             {
                 "id": "canonical",
-                "label": "Create a vendor bill only if this is actually an invoice",
-                "status": "completed" if report.canonical_invoices else "skipped",
+                "label": "Policy Review checked whether the document should enter the payable ledger.",
+                "status": "completed" if booked else "skipped",
+                "bot": "ctl-pay",
                 "detail": ", ".join(item.invoice_id for item in report.canonical_invoices) or "not treated as a vendor invoice",
             },
             {
                 "id": "duplicate",
-                "label": "Check for a second copy of the same bill",
+                "label": "Accounts Payable checked for a second copy of the same bill.",
                 "status": "completed",
+                "bot": "ap",
                 "detail": f"{report.duplicates_removed} duplicate copies set aside",
             },
         ],
@@ -199,7 +268,7 @@ def ingest_sample(sample_id: str | None = None, *, all_sources: bool = False) ->
     return artifacts.wrap_io(
         payload,
         inputs=artifacts.ingest_sample_inputs(source_id),
-        outputs=artifacts.output_from_ingest(payload),
+        outputs={**artifacts.output_from_ingest(payload), "what_changed": story["what_changed"]},
         explanation=reason,
     )
 
@@ -214,45 +283,78 @@ def _ingest_stages(report) -> list[dict]:
 
 
 def run_inbox(case_id: str | None = None) -> dict:
-    from inbox.fixtures import demo_specs
-    from inbox.workflow import handoff
+    from invoice_ingestion.interpret import interpret_email
 
-    specs = demo_specs()
-    spec = next((item for item in specs if getattr(item, "case_id", "") == case_id), None) if case_id else specs[0]
-    if spec is None:
-        spec = specs[0]
-    result = handoff(spec, persist=True)
+    emails = _load_emails()
+    by_id = {str(row.get("message_id")): row for row in emails if row.get("message_id")}
+    selected = [case_id] if case_id and case_id in by_id else curated_ids()
+    rows = []
+    for sample_id in selected:
+        email = by_id.get(sample_id)
+        if email is None:
+            continue
+        classification, reason, candidates = interpret_email(email)
+        meta = example_by_id(sample_id) or {}
+        group = group_for(sample_id, classification)
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "title": meta.get("title") or email.get("subject"),
+                "subject": email.get("subject"),
+                "from": email.get("from"),
+                "classification": classification,
+                "reason": reason,
+                "group": group,
+                "group_label": group_label(group),
+                "would_book": classification == "invoice" and group == "bills_to_process",
+                "extracted": dump(candidates[0]) if candidates else None,
+            }
+        )
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        groups.setdefault(row["group"], []).append(row)
+    ordered = [
+        {"id": key, "label": group_label(key), "items": groups.get(key, [])}
+        for key in ("bills_to_process", "do_not_book", "needs_investigation")
+        if groups.get(key)
+    ]
     payload = {
-        "summary": (
-            f"The inbox identified this as {result.receiver.classification.classification.replace('_', ' ')}"
-            + (f" and created {result.receiver.dispatch.invoice_id}" if result.receiver.dispatch.invoice_id else ", and did not create a vendor bill")
-        ),
-        "handoff": dump(result),
-        "record_ids": [result.receiver.dispatch.invoice_id] if result.receiver.dispatch.invoice_id else [],
+        "summary": f"Sorted {len(rows)} incoming documents into bills, items not to book, and items that need investigation.",
+        "classification": "inbox_sort",
+        "items": rows,
+        "groups": ordered,
+        "examples": INBOX_EXAMPLES,
+        "what_changed": "No ledgers were rewritten. This pass only identified which documents are vendor bills and which are not.",
         "stages": [
-            {"id": "received", "label": "Message received", "status": "completed", "bot": "email"},
+            {
+                "id": "received",
+                "label": "Document Intake collected the sample finance inbox.",
+                "status": "completed",
+                "bot": "email",
+                "detail": f"{len(rows)} documents",
+            },
             {
                 "id": "classified",
-                "label": "Inbox classification",
+                "label": "Document Intake identified each document as an invoice, quote, receipt, statement, purchase order, or something else.",
                 "status": "completed",
-                "detail": result.receiver.classification.classification,
                 "bot": "email",
             },
             {
                 "id": "dispatch",
-                "label": "Canonical registration",
+                "label": "Accounts Payable kept vendor bills and left quotes, receipts, statements, and purchase orders off the books.",
                 "status": "completed",
-                "detail": result.receiver.dispatch.invoice_id or result.final_status,
-                "bot": "email",
+                "bot": "ap",
             },
         ],
-        "handoffs": _handoff(["Counterparty Message Agent", "Finance Inbox Agent"]),
+        "record_ids": [row["sample_id"] for row in rows if row.get("would_book")],
+        "handoffs": _handoff(["Email Invoice Agent", "AP Preparer"]),
+        "source": {"samples": selected},
     }
-    source_id = getattr(spec, "case_id", None) or getattr(result, "case_id", None)
     return artifacts.wrap_io(
         payload,
-        inputs={"spec": dump(spec), "case_id": source_id},
-        outputs={"final_status": result.final_status, "handoff": dump(result)},
+        inputs={"samples": selected, "emails": [by_id.get(item) for item in selected if by_id.get(item)]},
+        outputs={"groups": ordered, "items": rows, "what_changed": payload["what_changed"]},
+        explanation=payload["summary"],
     )
 
 
@@ -392,7 +494,11 @@ def run_ar_apply(payment_id: str = "PAY-004") -> dict:
     trace = run_cash_apply(payment_id, live=False)
     selected = list(getattr(trace.final, "invoice_ids", None) or getattr(trace.final, "related_invoice_ids", None) or [])
     payload = {
-        "summary": f"The {payment_id} customer payment was {str(trace.final.decision).replace('_', ' ').lower()}",
+        "summary": (
+            f"Maximor applied the {payment_id} customer payment to {' and '.join(selected)}"
+            if selected
+            else f"Maximor could not match the {payment_id} customer payment to a single invoice with enough evidence"
+        ),
         "trace": dump(trace),
         "record_ids": [payment_id, *selected],
         "handoffs": _handoff(["Cash Application Agent", "Cash Application Reviewer"]),
@@ -623,15 +729,25 @@ def run_forecast() -> dict:
     from reporting.workflow import run_reporting_workflow
 
     before_weeks = (artifacts.forecast_inputs() or {}).get("weeks") or []
-    snapshot = build_forecast("2026-09-19", weeks=13)
+    opening = before_weeks[0].get("beginning_cash") if before_weeks else None
+    snapshot = build_forecast("2026-09-19", weeks=13, beginning_cash=opening)
     reporting = None
     try:
         reporting = run_reporting_workflow(period=PERIOD, as_of="2026-09-19", live=False)
     except TypeError:
         reporting = run_reporting_workflow()
     after_weeks = dump(snapshot.weeks)
+    original_ending = before_weeks[-1].get("ending_cash") if before_weeks else None
+    refreshed_ending = snapshot.weeks[-1].ending_cash if snapshot.weeks else None
+    if original_ending is not None and refreshed_ending is not None:
+        summary = (
+            f"The forecast already on the books ends at ${float(original_ending):,.0f}. "
+            f"Refreshing from current collections and open bills currently projects ${float(refreshed_ending):,.0f}."
+        )
+    else:
+        summary = f"The 13-week forecast currently ends at ${float(refreshed_ending or 0):,.0f}"
     payload = {
-        "summary": f"The 13-week forecast currently ends at {snapshot.weeks[-1].ending_cash if snapshot.weeks else None}",
+        "summary": summary,
         "snapshot": dump(snapshot),
         "reporting": dump(reporting),
         "handoffs": _handoff(["Cash Forecast Agent", "Variance Analysis Agent", "Forecast Variance Agent"]),
@@ -640,7 +756,12 @@ def run_forecast() -> dict:
     return artifacts.wrap_io(
         payload,
         inputs=artifacts.forecast_inputs(),
-        outputs={"weeks": after_weeks, "reporting": dump(reporting), "ending_cash": snapshot.weeks[-1].ending_cash if snapshot.weeks else None},
+        outputs={
+            "weeks": after_weeks,
+            "reporting": dump(reporting),
+            "ending_cash": refreshed_ending,
+            "original_ending_cash": original_ending,
+        },
         before={"weeks": before_weeks},
         after={"weeks": after_weeks},
     )

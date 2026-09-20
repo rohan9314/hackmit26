@@ -78,7 +78,10 @@ export function AgentPanel({ agent, live }: { agent: AgentDef; live?: any }) {
           </>
         ) : null}
       </div>
-      <p className="muted">{agent.example}</p>
+      <div>
+        <h2>Example of this agent's work</h2>
+        <p className="muted">{agent.example}</p>
+      </div>
     </div>
   );
 }

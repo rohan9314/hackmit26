@@ -20,6 +20,17 @@ _STATE: dict[str, Any] = {
     "run_dir": DEFAULT_RUNTIME / "runs",
 }
 
+REQUIRED_RUNTIME_FILES = (
+    ("company.json",),
+    ("invoices.json",),
+    ("ingestion", "emails.json"),
+)
+
+
+def runtime_pack_ready(path: Path) -> bool:
+    root = Path(path)
+    return all((root.joinpath(*parts)).is_file() for parts in REQUIRED_RUNTIME_FILES)
+
 
 def canonical_root() -> Path:
     return Path(_STATE["canonical"])
@@ -102,7 +113,7 @@ def bind_workspace(canonical: Path | None = None, runtime: Path | None = None, *
         return target_runtime
     if _STATE["bound"]:
         drain_data_root_stack()
-    if reset or not target_runtime.exists():
+    if reset or not runtime_pack_ready(target_runtime):
         reset_demo_runtime(target_runtime, source=target_canonical)
     apply_data_root(target_runtime)
     runs = target_runtime / "runs"

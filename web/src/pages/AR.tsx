@@ -1,23 +1,24 @@
 import { useEffect, useState } from "react";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { Definition, GlossaryTerm, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
-import { AGING_COPY, formatDecision, formatStatus } from "../copy";
+import { AGING_COPY, formatDecision, formatRecordId, formatStatus } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 const BUCKETS = ["CURRENT", "1-30", "31-60", "61-90", "90+"];
 
 export default function AR() {
-  const [data, setData] = useState<any>(null);
-  const [selected, setSelected] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const [data, setData] = useState<any>(() => savedGet("/api/ar"));
+  const [selected, setSelected] = useState<any>(() => (savedGet("/api/ar")?.invoices || []).find((item: any) => item.outstanding_amount > 0) || null);
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/ar").then(setData);
+    demoApi.loadReceivables().then(setData).catch(() => setData(savedGet("/api/ar")));
   }, [result]);
-
-  if (!data) return <div className="muted">Loading customer invoices…</div>;
   const inner = result?.result;
   const io = inner?.io;
   const remittance = io?.inputs?.payment || data.featured_payment?.payment;
@@ -36,6 +37,7 @@ export default function AR() {
         eyebrow="Accounts receivable"
         title="Money customers still owe"
         task="Accounts receivable is money customers still owe the company. Maximor tracks every unpaid customer invoice, determines how late it is, follows up on overdue balances, and matches incoming customer payments to the invoices they paid."
+        source={source}
         happening={
           <WhatsHappening
             happening="Lumen Labs sent Maximor a $5,000 payment. The payment description only says “September billing” and does not identify an invoice. Maximor needs to determine which customer invoice or invoices this payment belongs to."
@@ -48,13 +50,13 @@ export default function AR() {
             <RunBar
               label="Age unpaid invoices"
               running={running}
-              onRun={() => run("/api/workflows/ar-aging")}
+              onRun={() => run(() => demoApi.runAccountsReceivableAging())}
               extra={
                 <>
-                  <button className="btn" disabled={running} onClick={() => run("/api/workflows/ar-collections")}>
+                  <button className="btn" disabled={running} onClick={() => run(() => demoApi.runCollections())}>
                     Decide collection follow-up
                   </button>
-                  <button className="btn" disabled={running} onClick={() => run("/api/workflows/ar-cash-apply", { payment_id: "PAY-004" })}>
+                  <button className="btn" disabled={running} onClick={() => run(() => demoApi.runCashApplication("PAY-004"))}>
                     Match the Lumen Labs payment
                   </button>
                 </>
@@ -102,7 +104,7 @@ export default function AR() {
                         <tr key={item.invoice_id} className={selected?.invoice_id === item.invoice_id ? "selected" : ""} onClick={() => setSelected(item)}>
                           <td>
                             <div>{item.customer_name}</div>
-                            <div className="mono muted">{item.invoice_id}</div>
+                            <div className="muted">{formatRecordId(item.invoice_id)}</div>
                           </td>
                           <td>{item.description || "Customer invoice"}</td>
                           <td className="num right">{usd(item.outstanding_amount)}</td>
@@ -120,7 +122,7 @@ export default function AR() {
             ) : null}
           </div>
         }
-        process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+        process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.ar} />}
         output={
           <div className="stack">
             <div className="card">
@@ -133,7 +135,7 @@ export default function AR() {
               <ResultBlock
                 found={
                   applied.length
-                    ? `Maximor applied the ${usd(payment?.amount || 5000)} Lumen Labs payment to ${applied.join(" and ")}.`
+                    ? `Maximor applied the ${usd(payment?.amount || 5000)} Lumen Labs payment to ${applied.map(formatRecordId).join(" and ")}.`
                     : decision
                       ? "Maximor could not identify a matching invoice with enough evidence. The $5,000 remains recorded as an unmatched customer payment."
                       : "Run cash application to see whether Maximor can safely attach this $5,000 to a Lumen Labs invoice."
@@ -153,6 +155,7 @@ export default function AR() {
             </div>
             <div className="card">
               <h2>Invoice aging</h2>
+              <Definition term="Aging bucket" />
               <p className="muted">
                 Invoice aging groups unpaid customer invoices by how long they have been outstanding. An invoice that was due 75 days ago belongs in the 61–90 day group. Older balances are more concerning, since customers are taking longer to pay.
               </p>

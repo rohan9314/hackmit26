@@ -1,24 +1,37 @@
 import { useEffect, useState } from "react";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { BeforeAfterDiff, DemoLayout, OutputHeadline, ProcessPanel, ProvenanceLinks, SourceArtifactViewer } from "../components/Demo";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { Definition, ExceptionCard, LineageChain, ResultBlock, TraceIds, WhatsHappening } from "../components/Explain";
 import { formatDecision, formatException, formatFieldKey, formatStatus } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function AP() {
-  const [rows, setRows] = useState<any[]>([]);
-  const [detail, setDetail] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const [rows, setRows] = useState<any[]>(() => savedGet("/api/invoices")?.invoices || []);
+  const [detail, setDetail] = useState<any>(() => savedGet("/api/invoices/INV-003"));
+  const { running, result, error, source, run } = useWorkflow();
   const selected = detail?.invoice_id || "INV-003";
 
   useEffect(() => {
-    get<{ invoices: any[] }>("/api/invoices").then((payload) => setRows(payload.invoices || []));
+    demoApi
+      .loadInvoices()
+      .then((payload: any) => setRows(payload.invoices || savedGet("/api/invoices")?.invoices || []))
+      .catch(() => setRows(savedGet("/api/invoices")?.invoices || []));
   }, [result]);
 
   async function open(id: string) {
-    const row = await get(`/api/invoices/${id}`);
-    setDetail(row);
+    const saved = savedGet(`/api/invoices/${id}`);
+    try {
+      const row = await demoApi.loadInvoice(id);
+      const arts = row?.three_way?.artifacts || {};
+      const hasDocs = Boolean(arts.invoice || arts.purchase_order || row?.source_document || (row?.source_emails || []).length);
+      setDetail(hasDocs ? row : { ...saved, ...row, three_way: saved?.three_way, source_document: saved?.source_document });
+    } catch {
+      setDetail(saved);
+    }
   }
 
   useEffect(() => {
@@ -35,6 +48,7 @@ export default function AP() {
       eyebrow="Accounts payable"
       title="Vendor bills waiting to be paid"
       task="Accounts payable is money the company owes vendors. Maximor checks each bill against the purchase order and the record that goods or services were received before it can go on a payment run."
+      source={source}
       happening={
         <WhatsHappening
           happening="A vendor bill is only safe to pay if it matches what was ordered and what actually arrived. Maximor also looks for a second copy of the same bill."
@@ -47,9 +61,9 @@ export default function AP() {
           <RunBar
             label="Check this vendor bill"
             running={running}
-            onRun={() => run(`/api/workflows/ap/${selected}`)}
+            onRun={() => run(() => demoApi.runAccountsPayable(selected))}
             extra={
-              <button className="btn" disabled={running} onClick={() => run("/api/workflows/schedule")}>
+              <button className="btn" disabled={running} onClick={() => run(() => demoApi.runPaymentSchedule())}>
                 Draft this week's payments
               </button>
             }
@@ -103,15 +117,15 @@ export default function AP() {
           <div className="stack">
             <div className="card">
               <h2>Invoice</h2>
-              {(detail?.source_emails || []).map((item: any) => (
-                <SourceArtifactViewer key={item.artifact_id} artifact={item} />
+              {(detail?.source_emails || []).map((item: any, idx: number) => (
+                <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} />
               ))}
               {!(detail?.source_emails || []).length ? <SourceArtifactViewer artifact={tw.invoice || detail?.source_document} /> : null}
             </div>
             <div className="match-trio">
               <div className="card">
-                <h2>Invoice</h2>
-                <div className="mono">{tw.invoice?.record?.invoice_id || detail?.invoice_id}</div>
+                <h2>Amount on the bill</h2>
+                <div>{detail?.vendor || tw.invoice?.record?.vendor || "Vendor invoice"}</div>
                 <div>{usd(tw.invoice?.record?.amount || detail?.amount)}</div>
               </div>
               <div className="card">
@@ -128,12 +142,13 @@ export default function AP() {
           </div>
         )
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.ap} />}
       output={
         <div className="stack">
           <div className="card">
-            <OutputHeadline label="Payables decision" value={formatDecision(inner?.decision?.decision || detail?.match_status || "not run")} />
+            <OutputHeadline label="Payables decision" value={inner?.decision?.decision ? formatDecision(inner.decision.decision) : "Not run yet"} />
             <Definition term="Three-way match" />
+            {pair?.comparison ? <Definition term="Duplicate invoice" /> : null}
             {pair?.comparison ? (
               <ExceptionCard
                 problem="These two documents look like the same vendor bill sent twice."
@@ -152,7 +167,7 @@ export default function AP() {
               <ResultBlock
                 found={inner?.explanation?.narrative || inner?.io?.explanation || "Run accounts payable to see whether this bill is safe to pay."}
                 why="A vendor bill is only safe to pay if it matches what was ordered and what actually arrived, and is not a second copy of a bill already on file."
-                result={formatDecision(inner?.decision?.decision || detail?.match_status || "not run")}
+                result={inner?.decision?.decision ? formatDecision(inner.decision.decision) : "Not run yet"}
               />
             )}
             {inner?.naive ? <p>{inner.naive}</p> : null}

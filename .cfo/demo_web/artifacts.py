@@ -7,13 +7,19 @@ direct dump of a Kernel model). Provenance uses existing IDs only.
 from __future__ import annotations
 
 from demo_web.jsonutil import dump, read_json
-from demo_web.workspace import runtime_root
+from demo_web.workspace import canonical_root, runtime_root
 
 PERIOD = "2026-09"
 
 
 def _file(*parts: str):
-    return runtime_root().joinpath(*parts)
+    runtime = runtime_root().joinpath(*parts)
+    if runtime.exists():
+        return runtime
+    canonical = canonical_root().joinpath(*parts)
+    if canonical.exists():
+        return canonical
+    return runtime
 
 
 def artifact(

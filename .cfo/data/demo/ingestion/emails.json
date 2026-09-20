@@ -4,15 +4,15 @@
     "period": "2026-09",
     "from": "billing@acmesupplies.example",
     "to": "ap@maximor.example",
-    "subject": "Invoice ACM-2026-4410 from Acme Supplies",
+    "subject": "August warehouse supplies invoice",
     "sent_at": "2026-09-08T10:00:00Z",
-    "body": "Please find invoice ACM-2026-4410 for $12,450.00. PO-101.",
+    "body": "Please find invoice ACM-2026-4410 for the August Cambridge warehouse restock. Amount due $12,450.00 against purchase order PO-101.",
     "attachments": [
       {
         "attachment_id": "ATT-E-001",
         "filename": "ACM-2026-4410.pdf",
         "content_type": "application/pdf",
-        "text": "INVOICE\nInvoice number: ACM-2026-4410\nInvoice date: 2026-09-08\nVendor: Acme Supplies\nAmount due: 12450.00\nPO: PO-101"
+        "text": "INVOICE\nVendor: Acme Supplies\nInvoice number: ACM-2026-4410\nInvoice date: 2026-09-08\nDue date: 2026-10-08\nAmount due: 12450.00\nPO: PO-101\n\nServices:\nWarehouse packing supplies and cartons for the Cambridge office restock."
       }
     ]
   },
@@ -21,9 +21,9 @@
     "period": "2026-09",
     "from": "billing@northline.example",
     "to": "ap@maximor.example",
-    "subject": "inv nf-201   pls pay",
+    "subject": "Invoice with incomplete or confusing fields",
     "sent_at": "2026-09-04T16:22:00Z",
-    "body": "scanned copy attached. sorry for the quality.",
+    "body": "scanned copy attached. sorry for the quality. pls pay when you can.",
     "attachments": [
       {
         "attachment_id": "ATT-E-MESSY",
@@ -55,15 +55,15 @@
     "period": "2026-09",
     "from": "unknown@vendor.example",
     "to": "ap@maximor.example",
-    "subject": "Please process the attached invoice",
+    "subject": "Invoice with missing purchase order number",
     "sent_at": "2026-09-11T14:00:00Z",
-    "body": "Please process the attached invoice.",
+    "body": "Please process the attached invoice. Several header fields did not print.",
     "attachments": [
       {
         "attachment_id": "ATT-E-MISSING",
         "filename": "invoice-unknown.pdf",
         "content_type": "application/pdf",
-        "text": "Please process the attached invoice.\nNo amount, vendor, or invoice number is printed."
+        "text": "Please process the attached invoice.\nNo amount, vendor, or invoice number is printed.\nPurchase order number is missing."
       }
     ]
   },
@@ -72,9 +72,9 @@
     "period": "2026-09",
     "from": "ap@acmesupplies.example",
     "to": "ap@maximor.example",
-    "subject": "FW: Invoice ACM-2026-4410 from Acme Supplies",
+    "subject": "Second copy of ACM-2026-4410",
     "sent_at": "2026-09-08T15:40:00Z",
-    "body": "Resending in case the first copy was missed.",
+    "body": "Resending invoice ACM-2026-4410 in case the first copy was missed.",
     "attachments": [
       {
         "attachment_id": "ATT-E-DUP-001",
@@ -87,17 +87,17 @@
   {
     "message_id": "MSG-E-QUOTE",
     "period": "2026-09",
-    "from": "sales@acmesupplies.example",
+    "from": "sales@harborbuild.example",
     "to": "ap@maximor.example",
-    "subject": "Quote Q-8891 for additional standing desks",
+    "subject": "Quote for office renovation",
     "sent_at": "2026-09-09T11:40:00Z",
-    "body": "This is a quotation, not a request for payment until you issue a PO.",
+    "body": "Please find quotation Q-8891 for the Cambridge office renovation. This is a quote, not a request for payment until you issue a purchase order.",
     "attachments": [
       {
         "attachment_id": "ATT-E-QUOTE",
         "filename": "Q-8891-quote.pdf",
         "content_type": "application/pdf",
-        "text": "QUOTATION Q-8891\nNot an invoice."
+        "text": "QUOTATION Q-8891\nVendor: Harbor Build Co.\nQuote number: Q-8891\nQuote date: 2026-09-09\nQuoted amount: 18600.00\nValid through: 2026-10-09\nThis is a quote / estimate, not an invoice.\n\nScope:\nOffice renovation for the Cambridge floor — millwork, paint, and furniture."
       }
     ]
   },
@@ -106,32 +106,32 @@
     "period": "2026-09",
     "from": "ar@office.example",
     "to": "ap@maximor.example",
-    "subject": "Account statement September 2026",
+    "subject": "Vendor account statement — September",
     "sent_at": "2026-09-30T08:00:00Z",
-    "body": "Attached is your monthly statement of open items. This is not an invoice.",
+    "body": "Attached is your monthly account statement of open items. This is not an invoice.",
     "attachments": [
       {
         "attachment_id": "ATT-E-STMT",
         "filename": "statement-sep.pdf",
         "content_type": "application/pdf",
-        "text": "STATEMENT of account. Balance brought forward. Not an invoice."
+        "text": "STATEMENT of account\nVendor: Office Outfitters\nPeriod: September 2026\nAccount statement\n\nOpen items:\nINV-8821  $1,200.00\nINV-8840  $640.00\nBalance brought forward: $1,840.00\nThis is not an invoice."
       }
     ]
   },
   {
     "message_id": "MSG-E-RCPT",
     "period": "2026-09",
-    "from": "expenses@maximor.example",
+    "from": "receipts@figma.example",
     "to": "ap@maximor.example",
-    "subject": "Uber receipt for campus visit",
+    "subject": "Receipt for employee software purchase",
     "sent_at": "2026-09-12T18:00:00Z",
-    "body": "Receipt for $42.10. This is a payment confirmation / receipt, not a vendor invoice.",
+    "body": "Payment received. This is a receipt for an employee software purchase that has already been paid. It is not a vendor invoice.",
     "attachments": [
       {
         "attachment_id": "ATT-E-RCPT",
-        "filename": "uber-receipt.pdf",
+        "filename": "figma-receipt.pdf",
         "content_type": "application/pdf",
-        "text": "RECEIPT. Paid. Thank you. Not an invoice."
+        "text": "RECEIPT\nVendor: Figma\nReceipt number: FIG-SEP-19\nPayment date: 2026-09-12\nAmount paid: 144.00\nPaid in full. Thank you for your payment.\nThis is a receipt, not an invoice.\n\nFigma Organization plan — September"
       }
     ]
   },
@@ -158,7 +158,24 @@
         "attachment_id": "ATT-E-PO",
         "filename": "PO-101.pdf",
         "content_type": "application/pdf",
-        "text": "PURCHASE ORDER PO-101\nAcme Supplies\nAuthorized 12450.00"
+        "text": "PURCHASE ORDER PO-101\nAcme Supplies\nAuthorized 12450.00\nThis purchase order is not an invoice."
+      }
+    ]
+  },
+  {
+    "message_id": "MSG-E-PO-MONITORS",
+    "period": "2026-09",
+    "from": "procurement@maximor.example",
+    "to": "ap@maximor.example",
+    "subject": "Purchase order for 40 monitors",
+    "sent_at": "2026-09-03T09:30:00Z",
+    "body": "Purchase order PO-440 has been issued to Northline Fabrication for 40 monitors. This is a purchase order, not a vendor invoice.",
+    "attachments": [
+      {
+        "attachment_id": "ATT-E-PO-MONITORS",
+        "filename": "PO-440.pdf",
+        "content_type": "application/pdf",
+        "text": "PURCHASE ORDER PO-440\nVendor: Northline Fabrication\nAuthorized amount: 18400.00\nQuantity: 40 monitors\nThis purchase order is not an invoice.\nThis is a PO / requisition only."
       }
     ]
   },

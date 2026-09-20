@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { get, usd } from "../api";
+import { usd } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
 import { Definition, DevDetails, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
-import { formatAccountingMethod, formatAccountingSentence, formatAgent, formatStatus } from "../copy";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
+import { formatAccountingMethod, formatAccountingSentence, formatAgent, formatPeriod, formatStatus, formatSummary } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 function describeLookup(lookup: any) {
   if (!lookup || typeof lookup !== "object") return null;
@@ -35,11 +38,11 @@ function describeLookup(lookup: any) {
 }
 
 export default function Memory() {
-  const [data, setData] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const [data, setData] = useState<any>(() => savedGet("/api/memory"));
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/memory").then(setData);
+    demoApi.loadMemory().then(setData).catch(() => setData(savedGet("/api/memory")));
   }, [result]);
 
   const inner = result?.result;
@@ -53,6 +56,7 @@ export default function Memory() {
       eyebrow="Organizational memory"
       title="Decisions that travel from August to September"
       task="Decision memory lets Maximor remember how it handled a finance decision in an earlier period, including the evidence and reasoning behind it. Later periods can use that precedent, reject it when facts change, and record why."
+      source={source}
       happening={
         <WhatsHappening
           happening="In August, Maximor estimated Harbor Electric from the contract and recent bills and saved that decision. In September the bill is missing again. Maximor retrieves the August record, then re-evaluates current evidence instead of blindly copying last month's number."
@@ -65,13 +69,13 @@ export default function Memory() {
           <RunBar
             label="Replay Harbor Electric memory"
             running={running}
-            onRun={() => run("/api/workflows/memory", { story: "harbor" })}
+            onRun={() => run(() => demoApi.runMemory("harbor"))}
             extra={
               <>
-                <button className="btn" disabled={running} onClick={() => run("/api/workflows/memory", { story: "stripe" })}>
+                <button className="btn" disabled={running} onClick={() => run(() => demoApi.runMemory("stripe"))}>
                   Replay Stripe memory
                 </button>
-                <button className="btn" disabled={running} onClick={() => run("/api/workflows/memory-eval")}>
+                <button className="btn" disabled={running} onClick={() => run(() => demoApi.runMemoryEval())}>
                   Compare memory on vs off
                 </button>
               </>
@@ -89,8 +93,8 @@ export default function Memory() {
           <div className="card">
             <h2>What Maximor remembered from August</h2>
             <p>In August, Maximor estimated Harbor Electric using the contract plus recent bills. It saved the evidence, amount, method, and reason for that decision.</p>
-            {(data?.harbor?.prior_memory || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} />
+            {(data?.harbor?.prior_memory || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} />
             ))}
           </div>
           <div className="card">
@@ -99,7 +103,7 @@ export default function Memory() {
           </div>
         </div>
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.memory} />}
       output={
         <div className="stack">
           <div className="card">
@@ -148,21 +152,21 @@ export default function Memory() {
           <div className="card">
             <h2>Saved decisions in this runtime</h2>
             {(data?.decisions || []).length === 0 ? (
-              <p className="muted">No organizational decisions written yet. Run a memory story.</p>
+              <p className="muted">After you replay Harbor Electric, saved decisions from this runtime appear here. August's estimate is already shown above.</p>
             ) : (
               (data.decisions || []).map((item: any) => (
                 <div key={item.decision_id || item.id} className="card" style={{ marginBottom: 8 }}>
-                  <strong>{formatAccountingMethod(item.decision || item.accounting_treatment) || item.summary}</strong>
-                  <p className="muted">{item.situation_summary || item.reason || item.summary}</p>
+                  <strong>{formatAccountingMethod(item.decision || item.accounting_treatment) || formatSummary(item.summary)}</strong>
+                  <p className="muted">{formatSummary(item.situation_summary || item.reason || item.summary)}</p>
                   <TraceIds ids={[item.decision_id || item.id]} />
                   <DevDetails raw={item}>
                     <dl className="kv">
                       <dt>Decision</dt>
                       <dd>{formatAccountingMethod(item.decision)}</dd>
-                      <dt>Period</dt>
-                      <dd>{item.period || "—"}</dd>
+                      <dt>Accounting month</dt>
+                      <dd>{formatPeriod(item.period) || "—"}</dd>
                       <dt>Why</dt>
-                      <dd>{item.rationale || item.reason || item.situation_summary || "—"}</dd>
+                      <dd>{formatSummary(item.rationale || item.reason || item.situation_summary) || "—"}</dd>
                     </dl>
                   </DevDetails>
                 </div>
@@ -171,16 +175,20 @@ export default function Memory() {
           </div>
           <div className="card">
             <h2>Other remembered events</h2>
-            {(data?.events || []).map((item: any) => (
-              <div className="split" key={item.event_id} style={{ marginBottom: 8 }}>
-                <div>
-                  <div>{item.title}</div>
-                  <div className="muted">{item.period} · {formatStatus(item.kind)}</div>
-                  <TraceIds ids={item.record_ids} />
+            {(data?.events || []).length === 0 ? (
+              <p className="muted">No other remembered events are available for this runtime yet.</p>
+            ) : (
+              (data.events || []).map((item: any) => (
+                <div className="split" key={item.event_id} style={{ marginBottom: 8 }}>
+                  <div>
+                    <div>{item.title}</div>
+                    <div className="muted">{formatPeriod(item.period)} · {formatStatus(item.kind)}</div>
+                    <TraceIds ids={item.record_ids} />
+                  </div>
+                  <Pill>{formatAgent(item.agent)}</Pill>
                 </div>
-                <Pill>{formatAgent(item.agent)}</Pill>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
-import { ErrorBox, Pill } from "../layout/Shell";
+import { ErrorBox, Pill, SourceBadge } from "../layout/Shell";
 import { BeforeAfterDiff, ProcessPanel } from "../components/Demo";
-import { MetricCard, TraceIds } from "../components/Explain";
+import { GlossaryTerm, MetricCard, TraceIds } from "../components/Explain";
 import { HowItWorks } from "../components/HowItWorks";
 import { CoverageGrid } from "../components/CoverageGrid";
 import { SimulationCard } from "../components/SimulationCard";
@@ -14,18 +15,19 @@ import { SIMULATIONS } from "../data/simulations";
 import { VIDEOS } from "../data/videos";
 import { INVOICE_STORY } from "../data/workflowStory";
 import { formatFieldKey, formatStatus, EVAL_CASE_COPY, explainMetric } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function Overview() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(() => savedGet("/api/demo/overview"));
   const [error, setError] = useState<string | null>(null);
-  const [start, setStart] = useState<any>(null);
-  const [evals, setEvals] = useState<any>(null);
-  const { running, result, error: runError, run } = useWorkflow();
+  const [start, setStart] = useState<any>(() => savedGet("/api/demo/company-state"));
+  const [evals, setEvals] = useState<any>(() => savedGet("/api/evaluations"));
+  const { running, result, error: runError, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/demo/overview").then(setData).catch((err) => setError(String(err)));
-    get("/api/demo/company-state").then(setStart).catch(() => setStart(null));
-    get("/api/evaluations").then(setEvals).catch(() => setEvals(null));
+    demoApi.loadOverview().then(setData).catch(() => setData(savedGet("/api/demo/overview")));
+    demoApi.loadCompanyState().then(setStart).catch(() => setStart(savedGet("/api/demo/company-state")));
+    demoApi.loadEvaluations().then(setEvals).catch(() => setEvals(savedGet("/api/evaluations")));
   }, [result]);
 
   const m = data?.metrics || {};
@@ -42,7 +44,10 @@ export default function Overview() {
         <div className="eyebrow">HackMIT · Agentic Systems for the Office of the CFO</div>
         <h1>An AI finance team for the Office of the CFO.</h1>
         <p className="lede hero-lede">
-          Maximor uses a coordinated team of finance agents to handle accounts payable, reconciliation, close, forecasting, controls, and other finance work while sharing the same company context and decision history.
+          Maximor uses a coordinated team of finance agents to handle{" "}
+          <GlossaryTerm term="Accounts payable">bills the company owes</GlossaryTerm>,{" "}
+          <GlossaryTerm term="Reconciliation">matching the bank to the books</GlossaryTerm>,{" "}
+          <GlossaryTerm term="Month-end close">finishing the month</GlossaryTerm>, projecting cash, and checking controls, while sharing the same company records and remembered decisions.
         </p>
         <div className="btn-row">
           <Link className="btn primary" to="/architecture">
@@ -91,7 +96,7 @@ export default function Overview() {
             <p>Payables, payments, cash application, collections, cash reconciliation, close, and reporting prepare work. Payables Control, Cash Control, and Books Control look for reasons to refuse. The Audit Agent does not operate the books.</p>
             <p className="muted">The number of agents is an implementation choice. The story is shared context, handoffs, and an inspectable trail.</p>
             <Link className="btn" to="/architecture" style={{ marginTop: 8 }}>
-              Open the architecture
+              Open how the agents work together
             </Link>
           </div>
           <div className="card">
@@ -181,16 +186,17 @@ export default function Overview() {
         <p className="lede">
           The showcase above is the architecture. Below is the same office running on the demo company. Starting company state, the work the agents perform, and the ending state stay visible.
         </p>
-        {error ? <div className="error">{error}</div> : null}
+        {error ? <div className="notice">{error}</div> : null}
         {!data && !error ? <div className="muted">Loading Maximor books…</div> : null}
         <div className="toolbar">
           <div className="btn-row">
-            <button className="btn primary" disabled={running} onClick={() => run("/api/workflows/cfo-cycle")}>
+            <button className="btn primary" disabled={running} onClick={() => run(() => demoApi.runCfoCycle())}>
               {running ? "Running…" : "Run the connected CFO cycle"}
             </button>
             <Link className="btn" to="/simulations/cfo-cycle">
               About this simulation
             </Link>
+            <SourceBadge source={source} />
           </div>
         </div>
         <ErrorBox error={runError} />
@@ -278,7 +284,10 @@ export default function Overview() {
             <div className="grid-2">
               <div className="card">
                 <h2>What needs attention</h2>
-                {(data.briefing || []).map((item: any) => (
+                {(data.briefing || []).length === 0 ? (
+                  <p className="muted">Nothing currently needs extra attention on the live books.</p>
+                ) : (
+                  (data.briefing || []).map((item: any) => (
                   <Link key={item.title} to={item.href} className="tl-item" style={{ marginBottom: 10 }}>
                     <div />
                     <div className="tl-body">
@@ -287,7 +296,8 @@ export default function Overview() {
                       <TraceIds ids={item.record_ids} />
                     </div>
                   </Link>
-                ))}
+                  ))
+                )}
               </div>
               <div className="card">
                 <h2>Finance operations</h2>

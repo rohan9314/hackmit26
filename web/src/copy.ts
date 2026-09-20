@@ -83,6 +83,10 @@ export const STATUS_COPY: Record<string, string> = {
   quote: "Quote — not a bill",
   statement: "Account statement — not a bill",
   receipt: "Receipt — not a vendor bill",
+  purchase_order: "Purchase order — not a bill",
+  payment_confirmation: "Payment confirmation — not a bill",
+  not_invoice: "Not an invoice",
+  inbox_sort: "Inbox sorted",
   reimbursement: "Employee reimbursement",
   other: "Not treated as a vendor invoice",
   not_an_invoice: "Not an invoice",
@@ -103,6 +107,15 @@ export const STATUS_COPY: Record<string, string> = {
   "kernel-deterministic": "Using the company's recorded rules",
   "live-llm": "Using a live language model",
   "office-completes-work": "The office finishes the work itself",
+  qty_mismatch: "The billed quantity does not match what was received",
+  qty_variance: "The billed quantity does not match what was received",
+  quantity_mismatch: "The billed quantity does not match what was received",
+  goods_received: "Goods or services were received",
+  needs_human_review: "Needs a person to review",
+  pending_approval: "Waiting for approval",
+  hold_for_review: "Held for review",
+  stripe_fee: "Stripe processing fee",
+  txn_fee: "Transaction fee",
 };
 
 export const DECISION_COPY: Record<string, string> = {
@@ -168,6 +181,8 @@ export const METHOD_COPY: Record<string, string> = {
   AMORTIZE: "Spread the prepaid cost across the months it covers",
   DEPRECIATE: "Spread the asset cost across its useful life",
   EXPENSE: "Record the full amount as an expense now",
+  straight_line_monthly: "Spread evenly across each month of coverage",
+  STRAIGHT_LINE_MONTHLY: "Spread evenly across each month of coverage",
 };
 
 export const METHOD_SENTENCE: Record<string, string> = {
@@ -431,6 +446,9 @@ export const EXCEPTION_COPY: Record<string, string> = {
   date_mismatch: "The dates on the bill do not line up with the order or delivery.",
   po_mismatch: "The purchase-order number on the bill does not match company records.",
   unexplained_difference: "The bank and the ledger disagree, and no supporting fee or adjustment was found.",
+  qty_mismatch: "The invoice says the vendor billed for a different quantity than the company recorded as received.",
+  qty_variance: "The invoice says the vendor billed for a different quantity than the company recorded as received.",
+  quantity_mismatch: "The invoice says the vendor billed for a different quantity than the company recorded as received.",
 };
 
 export const AGING_COPY: Record<string, string> = {
@@ -468,6 +486,18 @@ export const GLOSSARY: Record<string, string> = {
   "Fixed asset": "Equipment or other long-lived property that should be recorded as an asset and spread over its useful life.",
   Depreciation: "Spreading the cost of equipment across the years it will be used.",
   "Stripe payout": "The net amount Stripe sends to the bank after charges, refunds, disputes, and fees.",
+  "Vendor invoice": "A bill from a supplier asking the company to pay for goods or services.",
+  Quote: "A price offer, not a bill. It should not create money the company owes.",
+  "Month-end close": "The work of finishing a month's books so the financial statements include everything that belongs in that month.",
+  "Audit evidence": "The original records an auditor uses to check whether a transaction and its controls actually happened.",
+  "Bank fee": "A charge the bank or payment processor takes, which can make a deposit or withdrawal differ from the original invoice amount.",
+  "Duplicate invoice": "A second copy of the same vendor bill. Paying both would mean paying twice.",
+  "Outstanding balance": "The amount still unpaid on an invoice.",
+  "Payment terms": "The agreed rules for when a bill must be paid, such as due in 30 days.",
+  "Aging bucket": "A group of unpaid invoices sorted by how late they are, such as not overdue yet or more than 90 days overdue.",
+  "Balance-sheet account": "A ledger account that records what the company owns or owes at a point in time, such as cash or unpaid bills.",
+  "Human review": "A pause because the available evidence is not strong enough for Maximor to finish the decision on its own.",
+  Invoice: "A bill asking for payment. A vendor invoice is money the company may owe; a customer invoice is money a customer may owe the company.",
 };
 
 export const KNOWN_ENUMS = {
@@ -492,7 +522,7 @@ export function formatStatus(value: unknown): string {
   if (value === true) return "Yes";
   if (value === false) return "No";
   if (looksLikeId(value)) return String(value);
-  return lookup(STATUS_COPY, value, humanizeToken(value) || "—");
+  return lookup(STATUS_COPY, value, lookup(DECISION_COPY, value, lookup(METHOD_COPY, value, lookup(EXCEPTION_COPY, value, humanizeToken(value) || "—"))));
 }
 
 export function formatDecision(value: unknown): string {
@@ -545,6 +575,83 @@ export function formatPeriod(value: unknown): string {
   const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const month = months[Number(match[2]) - 1];
   return month ? `${month} ${match[1]}` : raw;
+}
+
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+export function formatDateTime(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+  if (!match) return raw;
+  const month = MONTH_LONG[Number(match[2]) - 1];
+  if (!month) return raw;
+  const date = `${month} ${Number(match[3])}, ${match[1]}`;
+  return match[4] ? `${date} at ${match[4]}:${match[5]}` : date;
+}
+
+export const CADENCE_COPY: Record<string, string> = {
+  daily: "Runs every day",
+  weekly: "Runs every week",
+  monthly: "Runs every month",
+  quarterly: "Runs every quarter",
+};
+
+export function formatCadence(value: unknown): string {
+  return lookup(CADENCE_COPY, value, humanizeToken(value) || "—");
+}
+
+export function formatConfidence(value: unknown): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const pct = n <= 1 ? Math.round(n * 100) : Math.round(n);
+  return `${pct}%`;
+}
+
+/** Translate a record identifier for humans. Internal IDs stay unchanged. */
+export function formatRecordId(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("BANK-po_1Maximor") || raw.startsWith("po_1Maximor")) {
+    const kind = raw.replace(/^BANK-/, "").replace(/^po_1Maximor/, "").toLowerCase();
+    const payout =
+      kind === "fees"
+        ? "Stripe payout with processing fees"
+        : kind === "refunds"
+          ? "Stripe payout with refunds"
+          : kind === "disputes"
+            ? "Stripe payout with disputes"
+            : "Stripe payout to the bank";
+    return raw.startsWith("BANK-") ? `Bank deposit for ${payout}` : payout;
+  }
+  if (TASK_COPY[raw]) return TASK_COPY[raw];
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return formatDateTime(raw);
+  if (/^\d{4}-\d{2}$/.test(raw)) return formatPeriod(raw);
+  if (!looksLikeId(raw)) return raw;
+  if (/^INV-AR/i.test(raw)) return `Customer invoice ${raw}`;
+  if (/^INV-/i.test(raw)) return `Vendor invoice ${raw}`;
+  if (/^PAY-/i.test(raw)) return `Customer payment ${raw}`;
+  if (/^TXN-/i.test(raw)) return `Bank transaction ${raw}`;
+  if (/^GL-/i.test(raw)) return `Ledger entry ${raw}`;
+  if (/^JE-/i.test(raw)) return `Journal entry ${raw}`;
+  if (/^ACC-/i.test(raw)) return `Accrual ${raw}`;
+  if (/^HI-/i.test(raw)) return `Earlier bill ${raw}`;
+  if (/^CTR-/i.test(raw)) return `Control test ${raw}`;
+  if (/^MSG-/i.test(raw)) return `Incoming email ${raw}`;
+  if (/^PO-/i.test(raw)) return `Purchase order ${raw}`;
+  if (/^GR-/i.test(raw)) return `Receiving record ${raw}`;
+  if (/^MEM-/i.test(raw)) return `Saved decision ${raw}`;
+  if (/^CASE-/i.test(raw)) return `Case ${raw}`;
+  if (/^CUST-/i.test(raw)) return `Customer ${raw}`;
+  if (/^VEND-/i.test(raw)) return `Vendor ${raw}`;
+  if (/^APR-/i.test(raw)) return `Approval ${raw}`;
+  if (/^PRE-/i.test(raw)) return `Prepaid ${raw}`;
+  if (/^AC-/i.test(raw)) return `Evaluation case ${raw}`;
+  if (/^DOC-/i.test(raw)) return `Document ${raw}`;
+  if (/^FEE-/i.test(raw)) return `Fee evidence ${raw}`;
+  if (/^USR-/i.test(raw)) return `User ${raw}`;
+  if (/^CO-/i.test(raw)) return `Company ${raw}`;
+  return raw;
 }
 
 export function formatExecution(value: unknown): string {
@@ -678,6 +785,56 @@ export function formatFieldKey(key: string): string {
     customer_name: "Customer",
     remittance_text: "Payment message",
     payer_name: "Payer",
+    week_start: "Week of",
+    week_end: "Week ending",
+    sample_id: "Document",
+    kind: "Type",
+    rationale: "Why",
+    situation_summary: "Situation",
+    accounting_treatment: "Accounting method",
+    selected_method: "Estimation method",
+    bot: "Agent",
+    slug: "Agent",
+    grain: "Agent",
+    billed_amount: "Billed amount",
+    match_key: "Match",
+    finding_id: "Finding",
+    event_id: "Event",
+    decision_id: "Saved decision",
+    period: "Accounting month",
+    cadence: "How often",
+    record: "Record",
+    provenance: "Source trail",
+    confidence: "Confidence",
+    reason: "Why",
+    reason_code: "Why",
+    summary: "Summary",
+    title: "Title",
+    detail: "Detail",
+    what_changed: "What changed",
+    classification_reason: "Why this document type",
+    po_number: "Purchase order",
+    invoice_exists_for_september: "September invoice arrived?",
+    retrieved_ids: "Retrieved records",
+    precedent_used: "Used a previous decision",
+    deviation: "Why the previous decision was not copied",
+    written_memory_id: "Saved decision",
+    payment_id: "Customer payment",
+    payment_date: "Payment date",
+    bank_reference: "Bank reference",
+    three_way: "Invoice verification",
+    duplicate_peer: "Possible duplicate",
+    source_document: "Original document",
+    source_emails: "Source emails",
+    goods_receipt: "Receiving record",
+    purchase_order: "Purchase order",
+    journal_entry: "Journal entry",
+    selected: "Selected",
+    blocked: "Blocked",
+    cash_open: "Cash reconciliation still open",
+    needed: "Accrual needed",
+    treatment: "Accounting method",
+    eligible: "Eligible for payment",
   };
   return table[key] || humanizeToken(key);
 }
@@ -686,6 +843,7 @@ export function formatSummary(value: unknown): string {
   let text = String(value ?? "").trim();
   if (!text) return "";
   const replacements: Array<[RegExp, string | ((substring: string, ...args: string[]) => string)]> = [
+    [/\bwas human review\b/gi, "could not be matched with enough evidence"],
     [/\bHUMAN_REVIEW\b/g, "could not finish with the available evidence"],
     [/\bUNEXPLAINED_DIFFERENCE\b/g, "unresolved difference"],
     [/\bGROUPED_MATCH\b/g, "one payment covering several bills"],
@@ -698,6 +856,11 @@ export function formatSummary(value: unknown): string {
     [/\bthree_way_match_failed\b/g, "the invoice, purchase order, and delivery record do not all agree"],
     [/\bexception_duplicate_candidate\b/g, "possible duplicate invoice"],
     [/\bseasonal_prior_year\b/gi, "last year's seasonal pattern"],
+    [/\busage_run_rate\b/gi, "usage multiplied by the contract rate"],
+    [/\bcontract_commitment\b/gi, "the contracted monthly amount"],
+    [/\bstraight_line_monthly\b/gi, "spread evenly across each month"],
+    [/\bstripe_fee\b/gi, "Stripe processing fee"],
+    [/\btxn_fee[-_]fees\b/gi, "Stripe processing fee line"],
     [/\bcanonical invoices\b/gi, "recognized vendor invoices"],
     [/\bclassified as\b/gi, "identified as"],
     [/\bpayout waterfalls\b/gi, "payout explanations"],
@@ -905,7 +1068,7 @@ export function friendlyExpected(value: unknown): string {
   if (Array.isArray(row.miss_sources)) parts.push("Name the actual forecast-miss sources.");
   if (row.eligible === true) parts.push("The bill is eligible for the payment run.");
   if (row.august != null && row.september != null) parts.push(`Gross margin moves from ${Number(row.august) * 100}% to ${Number(row.september) * 100}%.`);
-  if (!parts.length) return "See developer details for the machine-readable fields.";
+  if (!parts.length) return "The expected outcome is stored separately from the agents so they cannot read it while they work.";
   return parts.join(" ");
 }
 

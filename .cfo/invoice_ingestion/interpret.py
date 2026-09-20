@@ -173,6 +173,25 @@ def classify_text(text: str, *, subject: str = "", filename: str = "") -> tuple[
         )
     ) or (re.search(r"\bestimate\b", blob) and not invoice_like):
         return "quote", "Document is a quote/estimate, not an invoice"
+    if any(
+        token in blob
+        for token in (
+            "uber trip receipt",
+            "uber receipt",
+            "lyft",
+            "rider receipt",
+            "this is a receipt",
+        )
+    ):
+        return "receipt", "Employee/paid receipt, not a vendor invoice"
+    if (
+        re.search(r"\breceipt\b", blob)
+        and ("paid" in blob or "thank you" in blob or "payment received" in blob)
+        and not invoice_like
+        and "goods receipt" not in blob
+        and "goods received" not in blob
+    ):
+        return "receipt", "Paid receipt, not a vendor invoice"
     if any(token in blob for token in ("payment received", "thank you for your payment", "payment confirmation")):
         return "payment_confirmation", "Payment confirmation, not a request for payment"
     if any(token in blob for token in ("account statement", "statement of account")):
@@ -184,9 +203,20 @@ def classify_text(text: str, *, subject: str = "", filename: str = "") -> tuple[
         "this purchase order is not an invoice",
         "this is a po",
     )
+    po_missing_context = any(
+        token in blob
+        for token in (
+            "purchase order number is missing",
+            "purchase order is missing",
+            "missing purchase order",
+            "no purchase order",
+            "po number is missing",
+        )
+    )
     if (
         any(token in blob for token in po_markers)
         and not invoice_like
+        and not po_missing_context
         and "invoice number" not in blob
         and "amount due" not in blob
     ):
@@ -206,27 +236,8 @@ def classify_text(text: str, *, subject: str = "", filename: str = "") -> tuple[
         and not invoice_like
     ):
         return "not_invoice", "Bank/card charge, not a vendor invoice"
-    if any(
-        token in blob
-        for token in (
-            "uber trip receipt",
-            "uber receipt",
-            "lyft",
-            "rider receipt",
-            "this is a receipt",
-        )
-    ):
-        return "receipt", "Employee/paid receipt, not a vendor invoice"
     if any(token in blob for token in ("reimburse", "expense reimbursement")):
         return "reimbursement", "Employee reimbursement documentation, not a vendor invoice"
-    if (
-        re.search(r"\breceipt\b", blob)
-        and ("paid" in blob or "thank you" in blob)
-        and not invoice_like
-        and "goods receipt" not in blob
-        and "goods received" not in blob
-    ):
-        return "receipt", "Paid receipt, not a vendor invoice"
     if "this is not an invoice" in blob and not invoice_like:
         return "not_invoice", "Document explicitly is not an invoice"
     if looks_like_invoice_text(text):

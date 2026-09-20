@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { GlossaryTerm } from "./Explain";
 import { AGENTS_BY_SLUG } from "../data/agents";
 import { CAPABILITIES } from "../data/capabilities";
 
@@ -10,7 +11,10 @@ export function CoverageGrid({ compact = false, intro = true }: { compact?: bool
           <div className="eyebrow">Office of the CFO</div>
           <h2 className="section-title">Finance functions, not one agent per function</h2>
           <p className="lede">
-            Accounts payable, receivables, cash, close, audit, and forecasting still exist. Several agents can share a function, and one agent can cover several related jobs.
+            <GlossaryTerm term="Accounts payable">Bills the company owes</GlossaryTerm>,{" "}
+            <GlossaryTerm term="Accounts receivable">money customers still owe</GlossaryTerm>,{" "}
+            <GlossaryTerm term="Reconciliation">matching the bank to the books</GlossaryTerm>,{" "}
+            <GlossaryTerm term="Month-end close">finishing the month</GlossaryTerm>, audit, and forecasting still exist. Several agents can share a function, and one agent can cover several related jobs.
           </p>
         </>
       ) : null}

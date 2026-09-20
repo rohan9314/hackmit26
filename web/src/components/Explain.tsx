@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { GLOSSARY } from "../copy";
+import { formatRecordId, GLOSSARY } from "../copy";
 import { FriendlyRaw } from "./Demo";
 
 export function WhatsHappening({
@@ -211,13 +211,29 @@ export function GlossaryTerm({ term, children }: { term: string; children?: Reac
   );
 }
 
+function friendlyRecordId(id: string) {
+  if (id.startsWith("BANK-po_1Maximor") || id.startsWith("po_1Maximor")) {
+    const kind = id.replace(/^BANK-/, "").replace(/^po_1Maximor/, "").toLowerCase();
+    const payout =
+      kind === "fees"
+        ? "Stripe payout with processing fees"
+        : kind === "refunds"
+          ? "Stripe payout with refunds"
+          : kind === "disputes"
+            ? "Stripe payout with disputes"
+            : "Stripe payout";
+    return id.startsWith("BANK-") ? `Bank deposit for ${payout}` : payout;
+  }
+  return formatRecordId(id);
+}
+
 export function TraceIds({ ids, label = "Supporting records" }: { ids?: Array<string | null | undefined>; label?: string }) {
   const clean = (ids || []).map((item) => String(item || "").trim()).filter(Boolean);
   if (!clean.length) return null;
   return (
     <div className="trace-ids">
       <span className="trace-label">{label}</span>
-      <span className="mono muted">{clean.join(" · ")}</span>
+      <span className="mono muted">{clean.map(friendlyRecordId).join(" · ")}</span>
     </div>
   );
 }
@@ -243,7 +259,7 @@ export function DevDetails({ raw, children }: { raw: unknown; children: ReactNod
       raw={raw}
       defaultTab="friendly"
       friendlyLabel="Explanation"
-      rawLabel="Developer details"
+      rawLabel="More fields"
       friendly={children}
     />
   );

@@ -85,7 +85,27 @@ def test_presentation_layer_hides_internal_tokens():
         assert f"{slug}:" in copy or f'"{slug}":' in copy or f'"{slug}"' in agents
     assert "table-scroll" in (FRONTEND / "styles.css").read_text()
     assert "onlyChanged" in (FRONTEND / "components" / "Demo.tsx").read_text()
-    assert "Developer details" in (FRONTEND / "components" / "Demo.tsx").read_text()
+    explain = (FRONTEND / "components" / "Explain.tsx").read_text()
+    assert "FriendlyRaw" in (FRONTEND / "components" / "Demo.tsx").read_text() or "FriendlyRaw" in explain
+    assert "Explanation" in explain
+    assert "More fields" in explain
+
+
+def test_pages_call_shared_demo_client_not_raw_paths():
+    pages = "\n".join(path.read_text() for path in (FRONTEND / "pages").glob("*.tsx"))
+    layout = (FRONTEND / "layout" / "Shell.tsx").read_text()
+    assert "demoApi." in pages
+    assert "/api/workflows/" not in pages
+    assert "/api/workflows/" not in layout
+    assert "identifyDocument" in (FRONTEND / "demoClient.ts").read_text()
+    for stale in (
+        "/api/workflows/identify-document",
+        "/api/workflows/document-identification",
+        "/demo/inbox",
+        "/api/agents/email/identify",
+    ):
+        assert stale not in pages
+        assert stale not in layout
 
 
 def test_eval_and_ar_pages_lead_with_english():

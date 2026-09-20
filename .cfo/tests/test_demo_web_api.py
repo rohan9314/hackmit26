@@ -239,3 +239,151 @@ def test_duplicate_ap_explains_downstream_prevention(client):
     assert "duplicate" in narrative.lower() or "already" in narrative.lower()
     assert payload["result"]["naive"]
     assert payload["result"]["lineage"]["steps"]
+
+
+WEBSITE_GET_ROUTES = [
+    "/health",
+    "/api/health",
+    "/api/demo/status",
+    "/api/demo/overview",
+    "/api/demo/company-state",
+    "/api/demo/company",
+    "/api/inbox",
+    "/api/inbox/MSG-E-QUOTE",
+    "/api/invoices",
+    "/api/invoices/INV-001",
+    "/api/ar",
+    "/api/cash",
+    "/api/stripe",
+    "/api/close",
+    "/api/forecast",
+    "/api/audit",
+    "/api/memory",
+    "/api/agents",
+    "/api/evaluations",
+    "/api/gauntlet",
+    "/api/scenarios",
+    "/api/architecture",
+    "/api/stories/trap",
+    "/api/stories/harbor",
+    "/api/stories/stripe",
+    "/api/stories/correction",
+    "/api/lineage/INV-006",
+    "/api/traces",
+]
+
+WEBSITE_POST_PATHS = [
+    "/api/workflows/invoice-ingestion",
+    "/api/workflows/inbox",
+    "/api/workflows/ap",
+    "/api/workflows/ap/{invoice_id}",
+    "/api/workflows/schedule",
+    "/api/workflows/ar-aging",
+    "/api/workflows/ar-collections",
+    "/api/workflows/ar-cash-apply",
+    "/api/workflows/bank-reconciliation",
+    "/api/workflows/stripe-reconciliation",
+    "/api/workflows/close",
+    "/api/workflows/accrual",
+    "/api/workflows/forecast",
+    "/api/workflows/audit",
+    "/api/workflows/memory",
+    "/api/workflows/memory-eval",
+    "/api/workflows/cfo-cycle",
+    "/api/workflows/evaluate",
+    "/api/workflows/gauntlet",
+    "/api/workflows/scenario/{scenario_id}",
+    "/api/demo/reset",
+]
+
+
+def test_website_read_routes_are_registered(client):
+    for path in WEBSITE_GET_ROUTES:
+        response = client.get(path)
+        assert response.status_code == 200, f"{path} -> {response.status_code} {response.text[:200]}"
+        payload = response.json()
+        assert payload not in (None, {}), path
+
+
+def test_website_workflow_routes_are_not_missing(client):
+    registered_posts = {
+        route.path
+        for route in client.app.routes
+        if getattr(route, "path", None) and "POST" in (getattr(route, "methods", None) or set())
+    }
+    missing = [path for path in WEBSITE_POST_PATHS if path not in registered_posts]
+    assert missing == [], f"website calls routes the API does not register: {missing}"
+    identify = client.post("/api/workflows/invoice-ingestion", json={"sample_id": "MSG-E-QUOTE"})
+    sort = client.post("/api/workflows/inbox", json={})
+    invoice = client.post("/api/workflows/invoice-ingestion", json={"sample_id": "MSG-E-INV-001"})
+    assert identify.status_code == 200 and identify.json()["ok"] is True
+    assert identify.json()["result"]["classification"] != "invoice"
+    assert sort.status_code == 200 and sort.json()["ok"] is True
+    extracted = invoice.json()["result"]["extracted"]
+    assert extracted["vendor"]
+    assert extracted["invoice_number"]
+    assert "invoice_id" not in extracted
+
+
+def test_stale_pre_migration_demo_routes_are_not_required(client):
+    stale = [
+        "/api/demo/identify",
+        "/api/demo/sort",
+        "/api/workflows/finance-inbox",
+        "/api/agents/email/run",
+    ]
+    for path in stale:
+        assert client.post(path, json={}).status_code == 404, path
+
+
+def test_inbox_catalog_has_judge_facing_examples(client):
+    inbox = client.get("/api/inbox").json()
+    ids = [item["sample_id"] for item in inbox["samples"]]
+    for sample_id in (
+        "MSG-E-INV-001",
+        "MSG-E-QUOTE",
+        "MSG-E-RCPT",
+        "MSG-E-STMT",
+        "MSG-E-PO-MONITORS",
+        "MSG-E-DUP-001",
+        "MSG-E-MESSY",
+        "MSG-E-MISSING",
+    ):
+        assert sample_id in ids, sample_id
+    quote = next(item for item in inbox["samples"] if item["sample_id"] == "MSG-E-QUOTE")
+    assert "quote" in quote["subject"].lower() or "quote" in quote["looks_like"].lower()
+    assert "does not owe" in quote["test"].lower() or "quote" in quote["test"].lower()
+    assert "invoice_bad" not in quote["subject"]
+    artifact = inbox["sample_artifacts"]["MSG-E-INV-001"]
+    assert artifact["email"]["from"]
+    assert artifact["email"]["body"]
+
+
+def test_sort_inbox_groups_sample_documents(client):
+    payload = client.post("/api/workflows/inbox", json={}).json()
+    assert payload["ok"] is True
+    groups = {item["id"]: item for item in payload["result"]["groups"]}
+    assert "bills_to_process" in groups
+    assert "do_not_book" in groups
+    titles = {row["title"] for item in payload["result"]["groups"] for row in item["items"]}
+    assert any("quote" in title.lower() for title in titles)
+    quote = next(item for item in payload["result"]["items"] if item["sample_id"] == "MSG-E-QUOTE")
+    assert quote["classification"] != "invoice"
+    assert quote["group"] == "do_not_book"
+
+
+def test_incomplete_runtime_is_repaired(tmp_path):
+    from demo_web.app import create_app
+    from demo_web.workspace import shutdown_workspace
+
+    runtime = tmp_path / "broken_runtime"
+    runtime.mkdir()
+    (runtime / "runs").mkdir()
+    app = create_app(CANONICAL, runtime)
+    with TestClient(app) as broken:
+        inbox = broken.get("/api/inbox").json()
+        assert any(item["sample_id"] == "MSG-E-QUOTE" for item in inbox["samples"])
+        identified = broken.post("/api/workflows/invoice-ingestion", json={"sample_id": "MSG-E-QUOTE"}).json()
+        assert identified["ok"] is True
+        assert identified["result"]["classification"] != "invoice"
+    shutdown_workspace()

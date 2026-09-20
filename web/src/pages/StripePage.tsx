@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { Definition, ResultBlock, TraceIds, WhatsHappening } from "../components/Explain";
 import { formatStatus } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function Stripe() {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any>(() => savedGet("/api/stripe"));
   const [index, setIndex] = useState(0);
-  const { running, result, error, run } = useWorkflow();
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/stripe").then(setData);
+    demoApi.loadStripe().then(setData).catch(() => setData(savedGet("/api/stripe")));
   }, [result]);
 
   const payouts = result?.result?.payouts || data?.payouts || [];
@@ -29,6 +32,7 @@ export default function Stripe() {
       eyebrow="Stripe"
       title="How a Stripe payout became a bank deposit"
       task="Stripe collects customer card payments, takes fees, handles refunds and chargebacks, then sends a net payout to the bank. Maximor reconstructs that waterfall so the bank deposit can be explained."
+      source={source}
       happening={
         <WhatsHappening
           happening="A Stripe payout is not a single customer payment. It is gross charges minus refunds, disputes, and Stripe fees. That net amount should match the bank deposit."
@@ -40,7 +44,7 @@ export default function Stripe() {
         <>
           <div className="toolbar">
             <div className="btn-row">
-              <button className="btn primary" disabled={running} onClick={() => run("/api/workflows/stripe-reconciliation")}>
+              <button className="btn primary" disabled={running} onClick={() => run(() => demoApi.runStripeReconciliation())}>
                 {running ? "Running…" : "Explain this payout"}
               </button>
             </div>
@@ -54,27 +58,26 @@ export default function Stripe() {
           <div className="card">
             <h2>The payout Stripe sent</h2>
             {(payouts || []).map((item: any, idx: number) => (
-              <div key={item.payout?.payout_id} className="card clickable" onClick={() => setIndex(idx)} style={{ marginBottom: 8 }}>
+              <div key={item.payout?.payout_id || idx} className="card clickable" onClick={() => setIndex(idx)} style={{ marginBottom: 8 }}>
                 <div className="split">
-                  <div>Stripe payout {idx + 1}</div>
+                  <div>{item.payout?.description || `Payout for ${usd(item.payout?.bank_deposit_amount || item.breakdown?.expected_payout || 0)}`}</div>
                   <Pill tone={item.tied ? "ok" : "bad"}>{item.tied ? "Tied to the bank deposit" : "Does not tie out"}</Pill>
                 </div>
-                <TraceIds ids={[item.payout?.payout_id]} />
               </div>
             ))}
             <SourceArtifactViewer artifact={bundle?.payout} />
           </div>
           <div className="card">
             <h2>Charges, refunds, fees, and disputes</h2>
-            {(bundle?.balance_transactions || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} compact />
+            {(bundle?.balance_transactions || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} compact />
             ))}
             <h2>Bank deposit</h2>
             <SourceArtifactViewer artifact={bundle?.bank_deposit} />
           </div>
         </div>
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.stripe} />}
       output={
         <div className="card">
           <OutputHeadline label="Tied to the bank deposit?" value={current?.tied ? "Yes" : current ? "Not yet" : "Select a payout"} tone={current?.tied ? "ok" : "bad"} />
@@ -96,9 +99,9 @@ export default function Stripe() {
               />
               <div className="waterfall-eq">
                 <div>Customer charges {usd(bd.gross_payments)}</div>
-                <div>− refunds {usd(bd.refunds)}</div>
-                <div>− disputes / chargebacks {usd(bd.chargebacks)}</div>
-                <div>− Stripe fees {usd(bd.fees)}</div>
+                <div>− refunds {usd(Math.abs(Number(bd.refunds || 0)))}</div>
+                <div>− disputes / chargebacks {usd(Math.abs(Number(bd.chargebacks || 0)))}</div>
+                <div>− Stripe fees {usd(Math.abs(Number(bd.fees || 0)))}</div>
                 <div>= expected payout {usd(expected)}</div>
                 <div>Bank deposit {usd(deposit)}</div>
                 <div>Difference {usd((expected || 0) - (deposit || 0))}</div>

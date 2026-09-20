@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
-import { get, usd, statusTone } from "../api";
+import { usd, statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { BeforeAfterDiff, DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
 import { Definition, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { formatAccountingSentence, formatStatus, formatTask } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 export default function Close() {
-  const [data, setData] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const [data, setData] = useState<any>(() => savedGet("/api/close"));
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/close").then(setData);
+    demoApi.loadClose().then(setData).catch(() => setData(savedGet("/api/close")));
   }, [result]);
 
   const inner = result?.result;
@@ -19,7 +22,7 @@ export default function Close() {
   const harbor = data?.harbor?.input;
   const accrualOut = result?.workflow === "accrual" ? io?.outputs : null;
   const journal = accrualOut?.journal_entry || harbor?.seeded_journal?.record;
-  const amount = accrualOut?.amount ?? (journal?.amount_minor != null ? journal.amount_minor / 100 : 4780);
+  const amount = accrualOut?.amount ?? (journal?.amount_minor != null ? journal.amount_minor / 100 : 4650);
   const method = accrualOut?.selected_method || accrualOut?.method;
   const history = harbor?.history_table?.rows || harbor?.history_table?.record || [];
   const amounts = (Array.isArray(history) ? history : []).map((row: any) => Number(row.expense || row.amount || 0)).filter(Boolean);
@@ -33,6 +36,7 @@ export default function Close() {
       eyebrow="Month-end"
       title="Finish September's books"
       task="Month-end close is the work of making sure September's financial statements include everything that belongs in September — even bills that have not arrived yet."
+      source={source}
       happening={
         <WhatsHappening
           happening="Harbor Electric is Maximor Demo Corp's electricity provider. Harbor Electric normally bills Maximor every month. September has ended, but the September electricity bill has not arrived yet. The company still used electricity during September, so its September financial statements need to include an estimated electricity expense."
@@ -45,9 +49,9 @@ export default function Close() {
           <RunBar
             label="Run month-end close"
             running={running}
-            onRun={() => run("/api/workflows/close")}
+            onRun={() => run(() => demoApi.runClose())}
             extra={
-              <button className="btn" disabled={running} onClick={() => run("/api/workflows/accrual", { vendor: "Harbor Electric" })}>
+              <button className="btn" disabled={running} onClick={() => run(() => demoApi.runAccrual("Harbor Electric"))}>
                 Estimate Harbor Electric
               </button>
             }
@@ -74,23 +78,24 @@ export default function Close() {
             <h2>Contract evidence</h2>
             <p className="muted">This vendor contract confirms that Harbor Electric provides monthly utility service to Maximor.</p>
             <SourceArtifactViewer artifact={harbor?.contract} compact />
-            {(harbor?.current_evidence || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} compact />
+            {(harbor?.current_evidence || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} compact />
             ))}
           </div>
           <div className="card">
             <h2>What Maximor remembered from August</h2>
-            {(harbor?.prior_memory || []).map((item: any) => (
-              <SourceArtifactViewer key={item.artifact_id} artifact={item} />
+            {(harbor?.prior_memory || []).map((item: any, idx: number) => (
+              <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} />
             ))}
           </div>
         </div>
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.close} />}
       output={
         <div className="stack">
           <div className="card">
             <OutputHeadline label="Month-end status" value={formatStatus(data?.status || io?.after?.status)} tone={statusTone(data?.status || io?.after?.status)} />
+            <Definition term="Month-end close" />
             <ResultBlock
               found={`Maximor estimated September's Harbor Electric expense at ${usd(amount)}.`}
               why={

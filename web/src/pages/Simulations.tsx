@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { get, statusTone } from "../api";
+import { statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, PageHead, Pill } from "../layout/Shell";
 import { ArtifactStack, BeforeAfterDiff, flattenInputs, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
@@ -27,7 +28,7 @@ export default function Simulations() {
 function SimulationIndex() {
   const [cards, setCards] = useState<any[]>([]);
   useEffect(() => {
-    get<{ scenarios: any[] }>("/api/scenarios").then((payload) => setCards(payload.scenarios || []));
+    demoApi.loadScenarios().then((payload: any) => setCards(payload.scenarios || []));
   }, []);
   const byId = Object.fromEntries(cards.map((row) => [row.id, row]));
 
@@ -68,8 +69,8 @@ function SimulationDetail({ item }: { item: Simulation }) {
   const [evals, setEvals] = useState<any>(null);
 
   useEffect(() => {
-    get<{ scenarios: any[] }>("/api/scenarios").then((payload) => setCards(payload.scenarios || []));
-    get("/api/evaluations").then(setEvals).catch(() => setEvals(null));
+    demoApi.loadScenarios().then((payload: any) => setCards(payload.scenarios || []));
+    demoApi.loadEvaluations().then(setEvals).catch(() => setEvals(null));
   }, [result]);
 
   const apiRow = cards.find((row) => row.id === item.id);
@@ -91,12 +92,12 @@ function SimulationDetail({ item }: { item: Simulation }) {
           <button
             className="btn primary"
             disabled={running}
-            onClick={() => run(`/api/workflows/scenario/${item.id}`)}
+            onClick={() => run(() => demoApi.runScenario(item.id))}
           >
             {running ? "Running…" : "Run this simulation"}
           </button>
         ) : item.runner === "cfo-cycle" ? (
-          <button className="btn primary" disabled={running} onClick={() => run("/api/workflows/cfo-cycle")}>
+          <button className="btn primary" disabled={running} onClick={() => run(() => demoApi.runCfoCycle())}>
             {running ? "Running…" : "Run the connected cycle"}
           </button>
         ) : null}

@@ -1,8 +1,9 @@
 import { ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
 import { usd, statusTone } from "../api";
-import { formatAgent, formatFieldKey, formatHandoff, formatRecordType, formatStage, formatStatus, formatSummary } from "../copy";
-import { ErrorBox, Pill, Stages } from "../layout/Shell";
+import { formatDateTime, formatFieldKey, formatHandoff, formatPeriod, formatRecordId, formatRecordType, formatStage, formatStatus, formatSummary, looksLikeId } from "../copy";
+import { FieldList } from "./Presentation";
+import { ErrorBox, Pill, Stages, SourceBadge } from "../layout/Shell";
 
 export function DemoLayout({
   eyebrow,
@@ -15,6 +16,7 @@ export function DemoLayout({
   extra,
   runBar,
   error,
+  source,
 }: {
   eyebrow: string;
   title: string;
@@ -26,6 +28,7 @@ export function DemoLayout({
   extra?: ReactNode;
   runBar?: ReactNode;
   error?: string | null;
+  source?: "live" | "saved" | null;
 }) {
   return (
     <div className="demo-page">
@@ -37,6 +40,12 @@ export function DemoLayout({
       <ErrorBox error={error} />
       {happening}
       {runBar}
+      {source ? (
+        <div className="source-row">
+          <SourceBadge source={source} />
+          {source === "saved" ? <span className="muted">Live agent run unavailable. Showing the saved demonstration result.</span> : null}
+        </div>
+      ) : null}
       <div className="io-flow" aria-label="What arrived, what the agents did, and what changed">
         <div className="io-col input-col">
           <div className="io-label">What arrived</div>
@@ -67,7 +76,7 @@ export function ProvenanceLinks({ links }: { links?: any[] }) {
   return (
     <div className="provenance">
       {links.filter(Boolean).map((link, idx) => {
-        const id = typeof link === "string" ? link : link.id;
+        const id = String((typeof link === "string" ? link : link.id || link.record_id) || "").trim();
         const kind = typeof link === "string" ? "" : link.kind;
         const href = hrefFor(id, kind);
         return (
@@ -75,16 +84,20 @@ export function ProvenanceLinks({ links }: { links?: any[] }) {
             {idx > 0 ? <span className="muted"> → </span> : null}
             {href ? (
               <Link className="mono" to={href}>
-                {id}
+                {provenanceLabel(id)}
               </Link>
             ) : (
-              <span className="mono">{id}</span>
+              <span className="mono">{provenanceLabel(id)}</span>
             )}
           </span>
         );
       })}
     </div>
   );
+}
+
+function provenanceLabel(id?: string) {
+  return formatRecordId(id) || String(id || "").trim();
 }
 
 function hrefFor(id?: string, kind?: string): string | null {
@@ -104,7 +117,7 @@ export function FriendlyRaw({
   raw,
   defaultTab = "friendly",
   friendlyLabel = "Explanation",
-  rawLabel = "Developer details",
+  rawLabel = "More fields",
 }: {
   friendly: ReactNode;
   raw: unknown;
@@ -123,7 +136,7 @@ export function FriendlyRaw({
           {rawLabel}
         </button>
       </div>
-      {tab === "friendly" ? friendly : <pre className="raw-json">{JSON.stringify(raw, null, 2)}</pre>}
+      {tab === "friendly" ? friendly : <FieldList row={raw} />}
     </div>
   );
 }
@@ -182,25 +195,41 @@ function formatValue(value: unknown, key?: string): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (typeof value === "number") {
+    if (key === "confidence") {
+      const pct = value <= 1 ? Math.round(value * 100) : Math.round(value);
+      return `${pct}%`;
+    }
     if (key && (key.endsWith("_minor") || key.includes("cents"))) return usd(value / 100);
     if (key && /cash|amount|outstanding|payment|inflow|outflow|payroll|expense/.test(key)) return usd(value);
     return String(value);
   }
   if (typeof value === "object") {
-    if (Array.isArray(value)) return value.length ? value.map((item) => (typeof item === "object" ? formatStatus(item) : formatStatus(item))).join(", ") : "—";
+    if (Array.isArray(value)) return value.length ? value.map((item) => formatValue(item, key)).join(", ") : "—";
     const row = value as Record<string, unknown>;
     if (row.decision) return formatStatus(row.decision);
     if (row.status) return formatStatus(row.status);
-    return "See developer details";
+    return "See explanation above";
+  }
+  const text = String(value);
+  if (looksLikeId(text) || text.startsWith("po_1Maximor") || text.startsWith("BANK-po_1Maximor")) return formatRecordId(text);
+  if (/^\d{4}-\d{2}(?:-\d{2})?/.test(text) && (key === "period" || key?.includes("date") || key?.includes("_at") || key?.includes("week"))) {
+    return key === "period" || /^\d{4}-\d{2}$/.test(text) ? formatPeriod(text) : formatDateTime(text);
   }
   return formatStatus(value);
 }
 
-export function ProcessPanel({ stages, handoffs, summary }: { stages?: any[]; handoffs?: any[]; summary?: string }) {
+export function ProcessPanel({ stages, handoffs, summary, preview }: { stages?: any[]; handoffs?: any[]; summary?: string; preview?: ReactNode }) {
   const translated = (stages || []).map((stage) => {
     const copy = formatStage(stage);
     return { ...stage, label: copy.label, detail: copy.detail };
   });
+  if (!translated.length && !summary && !handoffs?.length) {
+    return (
+      <div className="card process-card">
+        {preview || <p className="muted">After you run this, this column lists each agent in order and what it decided.</p>}
+      </div>
+    );
+  }
   return (
     <div className="card process-card">
       {summary ? <div className="muted" style={{ marginBottom: 8 }}>{formatSummary(summary)}</div> : null}
@@ -245,7 +274,7 @@ export function SourceArtifactViewer({ artifact, compact = false }: { artifact: 
   return (
     <div className={`artifact ${compact ? "compact" : ""}`}>
       <div className="split">
-        <strong>{artifact.title || formatRecordLabel(kind) || "Source record"}</strong>
+        <strong>{formatSummary(artifact.title) || formatRecordLabel(kind) || "Source record"}</strong>
       </div>
       <div className="muted" style={{ marginBottom: 8 }}>
         {formatRecordLabel(kind)}
@@ -273,7 +302,7 @@ function renderFriendly(kind: string, artifact: any, record: any) {
     return (
       <dl className="kv">
         <dt>Bank transaction</dt>
-        <dd className="mono">{record.transaction_id || record.entry_id}</dd>
+        <dd>{formatRecordId(record.transaction_id || record.entry_id) || record.transaction_id || record.entry_id}</dd>
         <dt>Date</dt>
         <dd>{record.date}</dd>
         <dt>Amount</dt>
@@ -292,7 +321,7 @@ function renderFriendly(kind: string, artifact: any, record: any) {
     return (
       <dl className="kv">
         <dt>Stripe payout</dt>
-        <dd className="mono">{record.payout_id || record.id}</dd>
+        <dd>{String(record.payout_id || record.id || "").startsWith("po_1Maximor") ? "Stripe payout to the bank" : record.payout_id || record.id}</dd>
         <dt>What this line is</dt>
         <dd>{formatStatus(record.type || record.source_event_type) || formatRecordType(kind)}</dd>
         <dt>Amount</dt>
@@ -319,7 +348,7 @@ function EmailView({ email, attachments }: { email: any; attachments?: any[] }) 
         <dt>Subject</dt>
         <dd>{email.subject}</dd>
         <dt>Timestamp</dt>
-        <dd>{email.sent_at}</dd>
+        <dd>{formatDateTime(email.sent_at)}</dd>
       </dl>
       <div className="doc-paper">
         <pre>{email.body}</pre>
@@ -354,10 +383,10 @@ function InvoiceView({ invoice, emails }: { invoice: any; emails?: any[] }) {
   if (!invoice) return null;
   return (
     <div>
-      {emails?.length ? emails.map((item) => <SourceArtifactViewer key={item.artifact_id} artifact={item} compact />) : null}
+      {emails?.length ? emails.map((item, idx) => <SourceArtifactViewer key={item.artifact_id || item.title || idx} artifact={item} compact />) : null}
       <dl className="kv">
         <dt>Invoice</dt>
-        <dd className="mono">{invoice.invoice_id}</dd>
+        <dd>{formatRecordId(invoice.invoice_id) || invoice.invoice_id}</dd>
         <dt>Vendor</dt>
         <dd>{invoice.vendor}</dd>
         <dt>Vendor invoice #</dt>
@@ -369,7 +398,7 @@ function InvoiceView({ invoice, emails }: { invoice: any; emails?: any[] }) {
         <dt>Amount</dt>
         <dd>{usd(invoice.amount)}</dd>
         <dt>Purchase order</dt>
-        <dd className="mono">{invoice.po_id || "—"}</dd>
+        <dd>{formatRecordId(invoice.po_id) || invoice.po_id || "—"}</dd>
         <dt>Description</dt>
         <dd>{invoice.description}</dd>
       </dl>
@@ -381,7 +410,7 @@ function PoView({ po }: { po: any }) {
   return (
     <dl className="kv">
       <dt>Purchase order</dt>
-      <dd className="mono">{po.po_id}</dd>
+      <dd>{formatRecordId(po.po_id) || po.po_id}</dd>
       <dt>Vendor</dt>
       <dd>{po.vendor}</dd>
       <dt>Authorized amount</dt>
@@ -400,9 +429,9 @@ function GrView({ gr }: { gr: any }) {
   return (
     <dl className="kv">
       <dt>Delivery record</dt>
-      <dd className="mono">{gr.receipt_id}</dd>
+      <dd>{formatRecordId(gr.receipt_id) || gr.receipt_id}</dd>
       <dt>Purchase order</dt>
-      <dd className="mono">{gr.po_id}</dd>
+      <dd>{formatRecordId(gr.po_id) || gr.po_id}</dd>
       <dt>Did it arrive?</dt>
       <dd>{gr.received === true || String(gr.received).toLowerCase() === "true" ? "Yes" : gr.received === false ? "No" : formatStatus(gr.received)}</dd>
       <dt>Quantity ordered</dt>
@@ -420,7 +449,7 @@ function JournalView({ row }: { row: any }) {
   return (
     <dl className="kv">
       <dt>Journal entry</dt>
-      <dd className="mono">{row.entry_id}</dd>
+      <dd>{formatRecordId(row.entry_id) || row.entry_id}</dd>
       <dt>Expense or asset account</dt>
       <dd>{row.debit_account || row.account}</dd>
       <dt>Offset account</dt>

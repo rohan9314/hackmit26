@@ -55,14 +55,19 @@ test.each(ROUTES)("renders %s without hardcoded demo success copy", async (route
   expect(screen.queryByText("Invoice approved")).not.toBeInTheDocument();
 });
 
-test("demo layout exposes what arrived and what changed", async () => {
+test("inbox lists documents to try even when the API returns empty samples", async () => {
   render(
     <MemoryRouter initialEntries={["/inbox"]}>
       <App />
     </MemoryRouter>
   );
-  expect(screen.getAllByText(/What arrived/i).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/What changed/i).length).toBeGreaterThan(0);
+  expect(await screen.findByText(/Documents to try/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/August warehouse supplies invoice/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Quote for office renovation/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Receipt for software purchase/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/September vendor statement/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Purchase order for 40 monitors/i).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
 });
 
 test("agents page uses finance team framing", async () => {

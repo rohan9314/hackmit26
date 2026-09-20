@@ -12,9 +12,10 @@ export function VideoCard({ video }: { video: Video }) {
           <video controls poster={video.thumbnail} src={video.src} />
         ) : (
           <div className="video-placeholder">
-            <div className="eyebrow">Awaiting recording</div>
+            <div className="eyebrow">Walkthrough</div>
             <div>{video.title}</div>
-            {video.duration ? <div className="muted">{video.duration}</div> : <div className="muted">A recording of this run has not been added yet.</div>}
+            <p className="muted" style={{ marginTop: 8 }}>{video.description}</p>
+            <div className="muted">A recording of this run has not been added yet. Open the matching live office tab to run the same scenario yourself.</div>
           </div>
         )}
       </div>

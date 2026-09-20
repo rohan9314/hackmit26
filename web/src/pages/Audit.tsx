@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { get, statusTone } from "../api";
+import { statusTone } from "../api";
+import { demoApi } from "../demoClient";
 import { useWorkflow } from "../hooks";
 import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
-import { ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
+import { Definition, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
+import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
 import { formatControlResult, formatStatus } from "../copy";
+import { savedGet } from "../data/savedDemo";
 
 function explainFinding(item: any) {
   const blob = `${item.title || ""} ${item.summary || ""} ${item.detail || ""} ${item.control_id || ""} ${item.control_name || ""} ${(item.record_ids || []).join(" ")}`.toLowerCase();
@@ -52,17 +55,17 @@ function explainFinding(item: any) {
   }
   return {
     found: item.summary || item.detail || item.title || "A control test did not pass.",
-    why: item.severity_rationale || item.reason_code || "The sampled records did not meet the control's expected pattern.",
+    why: formatSummary(item.severity_rationale || item.reason_code) || "The sampled records did not meet the control's expected pattern.",
     result: formatControlResult(item.severity || item.result || item.status),
   };
 }
 
 export default function Audit() {
-  const [data, setData] = useState<any>(null);
-  const { running, result, error, run } = useWorkflow();
+  const [data, setData] = useState<any>(() => savedGet("/api/audit"));
+  const { running, result, error, source, run } = useWorkflow();
 
   useEffect(() => {
-    get("/api/audit").then(setData);
+    demoApi.loadAudit().then(setData).catch(() => setData(savedGet("/api/audit")));
   }, [result]);
 
   const inner = result?.result;
@@ -75,6 +78,7 @@ export default function Audit() {
       eyebrow="Assurance"
       title="Independent control tests"
       task="Maximor's audit agents independently inspect transactions and accounting records for signs that company controls were broken or records do not agree."
+      source={source}
       happening={
         <WhatsHappening
           happening="This is not the team that pays bills or closes the month. The Audit Agent samples invoices, payments, journals, vendors, and approvals after the fact and re-performs the company's controls."
@@ -84,13 +88,14 @@ export default function Audit() {
       }
       runBar={
         <>
-          <RunBar label="Run independent audit" running={running} onRun={() => run("/api/workflows/audit")} />
+          <RunBar label="Run independent audit" running={running} onRun={() => run(() => demoApi.runAudit())} />
           <ErrorBox error={error} />
         </>
       }
       input={
         <div className="stack">
           <StoryCard title="Self-approval">
+            <Definition term="Audit evidence" />
             <p>This invoice was requested, prepared, reviewed, and approved by the same user.</p>
             <p>That breaks the company's separation-of-duties control, which expects different people or roles to prepare and approve a transaction.</p>
             <TraceIds ids={[self.requester_id, self.approver_id, featured.self_approval?.artifact_id]} />
@@ -115,7 +120,7 @@ export default function Audit() {
           </div>
         </div>
       }
-      process={<ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} />}
+      process={inner?.stages?.length ? <ProcessPanel stages={inner?.stages} handoffs={inner?.handoffs} summary={inner?.summary} /> : <ExpectedSteps steps={WORKFLOW_PREVIEWS.audit} />}
       output={
         <div className="card">
           <OutputHeadline label="Findings written" value={findings.length ? `${findings.length} control issues` : "Not run yet"} />

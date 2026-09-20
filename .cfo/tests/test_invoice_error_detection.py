@@ -58,6 +58,18 @@ def test_invoice_error_detection_suite():
             "cm.pdf",
             "not_invoice",
         ),
+        (
+            "RECEIPT\nVendor: Figma\nReceipt number: FIG-SEP-19\nPayment date: 2026-09-12\nAmount paid: 144.00\nPaid in full. Thank you for your payment.\nThis is a receipt, not an invoice.\n\nFigma Organization plan — September",
+            "Receipt for employee software purchase",
+            "figma-receipt.pdf",
+            "receipt",
+        ),
+        (
+            "Please process the attached invoice.\nNo amount, vendor, or invoice number is printed.\nPurchase order number is missing.",
+            "Invoice with missing purchase order number",
+            "invoice-unknown.pdf",
+            "not_invoice",
+        ),
     ],
 )
 def test_classify_text_document_types(text, subject, filename, expected):

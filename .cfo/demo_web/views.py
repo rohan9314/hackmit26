@@ -10,13 +10,20 @@ from demo_web.bots import architecture_payload, grain_agents
 from demo_web.jsonutil import cents_to_dollars, dump, money, read_json
 from demo_web.workspace import canonical_root, runtime_root, run_dir, stripe_status, website_dir
 from demo_web import artifacts
+from demo_web.inbox_examples import INBOX_EXAMPLES, curated_ids, example_by_id
 
 PERIOD = "2026-09"
 AS_OF = "2026-09-30"
 
 
 def data_file(*parts: str) -> Path:
-    return runtime_root().joinpath(*parts)
+    runtime = runtime_root().joinpath(*parts)
+    if runtime.exists():
+        return runtime
+    canonical = canonical_root().joinpath(*parts)
+    if canonical.exists():
+        return canonical
+    return runtime
 
 
 def load_company() -> dict:
@@ -338,53 +345,111 @@ def forecast_view() -> dict:
     }
 
 
+def _inbox_kind(row: dict) -> str:
+    meta = example_by_id(str(row.get("message_id") or ""))
+    if meta:
+        return str(meta["kind"])
+    subject = str(row.get("subject") or "")
+    text = " ".join(
+        [
+            subject,
+            str(row.get("body") or ""),
+            " ".join(str(att.get("text") or "") for att in row.get("attachments") or []),
+        ]
+    ).lower()
+    if "quote" in text or "quotation" in text:
+        return "quote"
+    if "statement" in text:
+        return "statement"
+    if "receipt" in text:
+        return "receipt"
+    if "purchase order" in text or str(row.get("message_id") or "").startswith("MSG-E-PO"):
+        return "purchase_order"
+    if "dup" in str(row.get("message_id") or "").lower() or "resending" in text:
+        return "duplicate"
+    if "no amount" in text or "missing" in str(row.get("message_id") or "").lower():
+        return "malformed"
+    return "invoice"
+
+
+def _sample_row(row: dict) -> dict:
+    sample_id = str(row.get("message_id") or "")
+    meta = example_by_id(sample_id) or {}
+    return {
+        "sample_id": sample_id,
+        "source": "email",
+        "kind": meta.get("kind") or _inbox_kind(row),
+        "from": row.get("from"),
+        "subject": meta.get("title") or row.get("subject"),
+        "raw_subject": row.get("subject"),
+        "sent_at": row.get("sent_at"),
+        "preview": (row.get("body") or "")[:240],
+        "test": meta.get("test") or "",
+        "looks_like": meta.get("looks_like") or meta.get("kind") or _inbox_kind(row),
+        "featured": bool(meta),
+    }
+
+
 def inbox_catalog() -> dict:
     emails = read_json(data_file("ingestion", "emails.json")) or []
     documents = read_json(data_file("ingestion", "documents.json")) or []
     employee = read_json(data_file("ingestion", "employee_submissions.json")) or []
     portals = read_json(data_file("ingestion", "vendor_portals.json")) or []
     bank_card = read_json(data_file("ingestion", "bank_transactions.json")) or []
-    samples = []
+    by_id = {str(row.get("message_id")): row for row in emails if row.get("message_id")}
+    featured = []
+    for sample_id in curated_ids():
+        row = by_id.get(sample_id)
+        if row:
+            featured.append(_sample_row(row))
+    others = [_sample_row(row) for row in emails if str(row.get("message_id")) not in set(curated_ids())]
+    samples = featured or [_sample_row(row) for row in emails]
+    packed = {}
     for row in emails:
-        subject = str(row.get("subject") or "")
-        text = " ".join(
-            [
-                subject,
-                str(row.get("body") or ""),
-                " ".join(str(att.get("text") or "") for att in row.get("attachments") or []),
-            ]
-        ).lower()
-        kind = "invoice"
-        if "quote" in text or "quotation" in text:
-            kind = "quote"
-        elif "statement" in text:
-            kind = "statement"
-        elif "receipt" in text:
-            kind = "receipt"
-        elif "dup" in str(row.get("message_id") or "").lower() or "resending" in text:
-            kind = "duplicate"
-        elif "no amount" in text or "missing" in str(row.get("message_id") or "").lower():
-            kind = "malformed"
-        samples.append(
-            {
-                "sample_id": row.get("message_id"),
-                "source": "email",
-                "kind": kind,
-                "from": row.get("from"),
-                "subject": row.get("subject"),
-                "sent_at": row.get("sent_at"),
-                "preview": (row.get("body") or "")[:240],
-            }
-        )
+        sample_id = row.get("message_id")
+        if not sample_id:
+            continue
+        artifact = artifacts.email_artifact(sample_id)
+        if artifact:
+            packed[sample_id] = artifact
     return {
         "samples": samples,
+        "featured": featured,
+        "other_samples": others,
+        "examples": INBOX_EXAMPLES,
         "documents": documents,
         "employee_submissions": employee,
         "portals": portals,
         "bank_card": bank_card,
         "emails": emails,
-        "sample_artifacts": {row.get("message_id"): artifacts.email_artifact(row.get("message_id")) for row in emails if row.get("message_id")},
+        "sample_artifacts": packed,
+        "default_sample_id": (featured[0]["sample_id"] if featured else (samples[0]["sample_id"] if samples else "MSG-E-INV-001")),
     }
+
+
+def _harbor_vendor(row: dict) -> bool:
+    blob = " ".join(
+        str(row.get(key) or "")
+        for key in ("summary", "situation_summary", "reason", "rationale", "vendor", "entity", "subject")
+    )
+    return "harbor electric" in blob.lower()
+
+
+def _dedupe_harbor_decisions(decisions: list[dict]) -> list[dict]:
+    """Keep one Harbor Electric decision per period so eval leftovers do not confuse the demo."""
+    preferred = {}
+    others: list[dict] = []
+    for row in decisions or []:
+        if not _harbor_vendor(row):
+            others.append(row)
+            continue
+        period = str(row.get("period") or "")
+        method = str(row.get("decision") or row.get("accounting_treatment") or "")
+        current = preferred.get(period)
+        if current is None or (method == "seasonal_prior_year" and current[1] != "seasonal_prior_year"):
+            preferred[period] = (row, method)
+    harbor_rows = [item[0] for item in preferred.values()]
+    return harbor_rows + others
 
 
 def memory_view() -> dict:
@@ -402,7 +467,7 @@ def memory_view() -> dict:
         "events": events,
         "prior_cases": prior,
         "ar_precedents": ar_prec,
-        "decisions": decisions,
+        "decisions": _dedupe_harbor_decisions(decisions if isinstance(decisions, list) else []),
         "mechanisms": [
             "prior_cases (AP alias CASE-001)",
             "ar_precedents (Atlas batch / Meridian correction)",
@@ -438,7 +503,7 @@ def audit_view() -> dict:
             "post-close journal",
             "paid-while-held",
         ],
-        "note": "Findings appear after POST /api/workflows/audit. Planted answers are not shown before the run.",
+        "note": "Findings appear after you run the independent audit. Planted answers are not shown before the run.",
         "inputs": artifacts.audit_population_inputs(),
     }
 

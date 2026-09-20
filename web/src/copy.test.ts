@@ -17,6 +17,10 @@ import {
   formatHandoff,
   formatMatchType,
   formatPeriod,
+  formatRecordId,
+  formatCadence,
+  formatDateTime,
+  formatConfidence,
   formatStatus,
   formatSummary,
   formatTask,
@@ -129,7 +133,25 @@ test("summaries and handoffs stay in English", () => {
   expect(formatSummary("Close BLOCKED")).toMatch(/cannot finish/i);
   expect(formatSummary("classified as quote")).toMatch(/identified as/i);
   expect(formatSummary("Python evidence")).toMatch(/supporting records/i);
+  expect(formatSummary("The PAY-004 customer payment was human review")).toMatch(/could not be matched/i);
+  expect(formatSummary("The PAY-004 customer payment was human review")).not.toMatch(/human review/i);
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).toMatch(/Accounts Payable Agent/);
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).toMatch(/Payables Control/);
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).not.toMatch(/AP_AGENT/);
+});
+
+test("record ids and dates are labeled without changing formatStatus", () => {
+  expect(formatStatus("INV-AR-013")).toBe("INV-AR-013");
+  expect(formatStatus("HI-HE-2026-08")).toBe("HI-HE-2026-08");
+  expect(formatRecordId("INV-AR-013")).toMatch(/customer invoice/i);
+  expect(formatRecordId("INV-003")).toMatch(/vendor invoice/i);
+  expect(formatRecordId("PAY-004")).toMatch(/payment/i);
+  expect(formatRecordId("TXN-2026-09-015")).toMatch(/bank transaction/i);
+  expect(formatRecordId("TASK-CASH")).toMatch(/cash/i);
+  expect(formatRecordId("po_1MaximorFees")).toMatch(/stripe payout/i);
+  expect(formatRecordId("BANK-po_1MaximorFees")).toMatch(/bank deposit/i);
+  expect(formatCadence("weekly")).toMatch(/week/i);
+  expect(formatDateTime("2026-09-15")).toMatch(/September/);
+  expect(formatConfidence(0.72)).toBe("72%");
+  expect(formatException("qty_mismatch")).toMatch(/quantity/i);
 });
