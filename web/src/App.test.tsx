@@ -64,8 +64,8 @@ test("inbox lists documents to try even when the API returns empty samples", asy
   expect(await screen.findByText(/Documents to try/i)).toBeInTheDocument();
   expect(screen.getAllByText(/August warehouse supplies invoice/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Quote for office renovation/i).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/Receipt for software purchase/i).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/September vendor statement/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Receipt for employee software purchase/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Vendor account statement/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Purchase order for 40 monitors/i).length).toBeGreaterThan(0);
   expect(screen.queryByText(/\[object Object\]/)).not.toBeInTheDocument();
 });

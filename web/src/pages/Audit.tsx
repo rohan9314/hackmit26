@@ -6,7 +6,7 @@ import { ErrorBox, Pill, RunBar } from "../layout/Shell";
 import { DemoLayout, OutputHeadline, ProcessPanel, SourceArtifactViewer } from "../components/Demo";
 import { Definition, ResultBlock, StoryCard, TraceIds, WhatsHappening } from "../components/Explain";
 import { ExpectedSteps, WORKFLOW_PREVIEWS } from "../components/Presentation";
-import { formatControlResult, formatStatus } from "../copy";
+import { formatControlResult, formatStatus, formatSummary } from "../copy";
 import { savedGet } from "../data/savedDemo";
 
 function explainFinding(item: any) {

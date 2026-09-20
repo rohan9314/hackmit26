@@ -138,6 +138,8 @@ test("summaries and handoffs stay in English", () => {
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).toMatch(/Accounts Payable Agent/);
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).toMatch(/Payables Control/);
   expect(formatHandoff(["ap", "ctl-pay"], "ap")).not.toMatch(/AP_AGENT/);
+  expect(formatSummary("used seasonal_prior_year (4,650.00)")).toMatch(/last year's seasonal pattern/i);
+  expect(formatSummary("used usage_run_rate (11,849.90)")).not.toMatch(/usage_run_rate/);
 });
 
 test("record ids and dates are labeled without changing formatStatus", () => {
